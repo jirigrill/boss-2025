@@ -43,9 +43,7 @@ languages:
 - Python
 - C
 - C++
-- C#
 - Rust
-- Go
 
 The autograder runs in Ubuntu 22 with
 [these packages](https://github.com/actions/runner-images/blob/ubuntu22/20231217.2/images/ubuntu/Ubuntu2204-Readme.md)
