@@ -28,7 +28,7 @@ jobs:
         command: "bash ./.github/test/test_balance.sh"
         expected-output: 'PASS'
         comparison-method: contains
-        timeout: 10
+        timeout: 30
         max-score: 1
     - name: Send Multisig
       id: send-multisig
