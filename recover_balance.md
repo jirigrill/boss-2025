@@ -16,7 +16,7 @@ descriptor into Bitcoin Core to check your own work as you develop the wallet lo
 3. Derive 2000 private keys from that path
 4. Compute the compressed public key for each private key
 5. Compute the `p2wpkh` witness program for each compressed public key
-6. Using the RPC interface **of your own local, synced signet node**, scan all transactions in the first 310 blocks in the chain
+6. Using the RPC interface **of your own local, synced signet node**, scan all transactions in the first 300 blocks in the chain
     1. Look for your witness programs in all TX outputs - these are coins you received
     2. Look for you compressed public keys in all TX witnesses - these are coins you spent
     3. You will need to track received coins by their **outpoint** so you can deduct their value from your balance when they are spent

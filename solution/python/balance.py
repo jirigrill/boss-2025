@@ -94,8 +94,8 @@ def recover_wallet_state(tprv: str):
         "programs": programs
     }
 
-    # Scan blocks 0-310
-    height = 310
+    # Scan blocks 0-300
+    height = 300
     for h in range(height + 1):
 
         # Scan every tx in every block
