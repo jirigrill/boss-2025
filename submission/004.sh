@@ -5,4 +5,4 @@ XPUB="xpub6Cx5tvq6nACSLJdra1A6WjqTo1SgeUZRFqsX5ysEtVBMwhCCRa4kfgFqaT2o1kwL3esB1P
 INDEX=100
 DESCRIPTOR=$(bitcoin-cli getdescriptorinfo "tr($XPUB/$INDEX)" 2>/dev/null)
 FULL_DESC=$(echo $DESCRIPTOR | jq -r '.descriptor')
-echo $(bitcoin-cli deriveaddresses "$FULL_DESC")
+bitcoin-cli deriveaddresses "$FULL_DESC" | jq -r .[0]
