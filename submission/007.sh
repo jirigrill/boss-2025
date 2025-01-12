@@ -5,7 +5,6 @@ BLOCK_TXS=($(bitcoin-cli getblock $(bitcoin-cli getblockhash $BLOCK) | jq -r '.t
 
 for txid in "${BLOCK_TXS[@]}"; do
     TX_INFO=$(bitcoin-cli getrawtransaction $txid 1)
-    # Get number of outputs (vouts)
     NUM_VOUTS=$(echo $TX_INFO | jq '.vout | length')
 
     for vout in $(seq 0 $(($NUM_VOUTS - 1))); do

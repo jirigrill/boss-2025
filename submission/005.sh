@@ -19,5 +19,4 @@ while IFS= read -r line; do
 done <<< "$WITNESS_DATA"
 JSON_ARRAY+="]"
 
-# Execute createmultisig command
 bitcoin-cli createmultisig 1 "$JSON_ARRAY" | jq -r '.address'
