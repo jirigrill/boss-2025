@@ -22,7 +22,9 @@ Note that:
 
 Write a program in a language of your choosing that:
 - Accepts three arguments: 
-  - 0: an absolute path where you should write `output.csv` with your solution
+  - 0: an absolute path to the directory where you should write 
+      `output.csv` with your solution (this will not include the file
+       name `output.csv`).
   - 1: an absolute path to a csv file containing a set of hops in a lightning 
        network route.
   - 2: a bech32-encoded regtest payment request, which provides the details of 
@@ -217,7 +219,8 @@ of this record uses [big size](https://github.com/lightning/bolts/blob/master/01
 encoding to save space on the wire.
 
 *Do not include a MPP field* for inputs that only make a payment over 
-a single path.
+a single path. This is also *different* from the specification (nowadays
+we always include it), changed to simplify grading across steps.
 
 ### Input Format
 
@@ -270,6 +273,9 @@ RUN apt-get update && apt-get install -y \
 We *will not* be providing the expected values for `output.csv`, you
 are expected to follow the hints provided by the grader.
 
+You can use `./test/check_run.sh` to check that your run script is
+executing successfully. This is *not* a correctness check.
+
 ## Submission
 
 Once you have completed the steps, submit the following to the 
@@ -281,7 +287,3 @@ Once you have completed the steps, submit the following to the
   * Expect this script to be run from the parent directory of [submissions](/submissions) 
     i.e: `./submissions/run.sh {output csv path} {input.csv path} {payment_request} {height}`
   with the arguments provided.
-* When you are satisfied with your solution, follow the instruction in 
-  [done.sh](submissions/done.sh) to signal that you are ready for 
-  manual assessment.
-
