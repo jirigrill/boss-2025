@@ -3,15 +3,15 @@ import hashlib
 import hmac
 from decimal import Decimal
 from ecdsa import SigningKey, SECP256k1
-from subprocess import run
 from typing import Any, Dict, List, Tuple
+from concurrent.futures import ThreadPoolExecutor
 
 from wallet_dataclasses import DerivedKey, DeserializedKey
-from utils import validate_bytes_length, bytes_to_hex
+from utils import validate_bytes_length, split_derivation_string, bcli
 from constants import EXTENDED_KEY_LENGTH, PRIVATE_KEY_LENGTH, CHAINCODE_LENGTH, PUBKEY_COMPRESSED_LENGTH
 
 WALLET_NAME = "wallet_109"
-EXTENDED_PRIVATE_KEY = "tprv8ZgxMBicQKsPcvvA9Y4GcwhZJAx6KCmqw4sz9PEidDEhyFNwSXkie7xSL72KaZCx2vTVsG63mGwCKQAUxm9pTS41TpWTEs7PTDBqXb8uY2L"
+EXTENDED_PRIVATE_KEY = "wpkh(tprv8ZgxMBicQKsPcvvA9Y4GcwhZJAx6KCmqw4sz9PEidDEhyFNwSXkie7xSL72KaZCx2vTVsG63mGwCKQAUxm9pTS41TpWTEs7PTDBqXb8uY2L/84h/1h/0h/0/*)#vu7vzl0x"
 
 def is_hardened_index(index: int) -> bool:
     """Check if a child index is hardened   ."""
@@ -197,7 +197,7 @@ def get_wallet_privs(key: bytes, chaincode: bytes, path: List[Tuple[int, bool]])
     
     # Now generate 2000 child keys from the derived path
     child_keys = []
-    for i in range(0,1999):
+    for i in range(0,2000):
         # Always use non-hardened derivation for the final keys
         derived = derive_priv_child(current_key, current_chaincode, i, hardened=False)
         child_keys.append(derived.key)
@@ -228,120 +228,100 @@ def get_p2wpkh_program(pubkey: bytes, version: int=0) -> bytes:
     return witness_program
 
 
-# Assuming Bitcoin Core is running and connected to signet using default datadir,
-# execute an RPC and return its value or error message.
-# https://github.com/bitcoin/bitcoin/blob/master/doc/bitcoin-conf.md#configuration-file-path
-# Examples: bcli("getblockcount")
-#           bcli("getblockhash 100")
-def bcli(cmd: str):
-    res = run(
-            ["bitcoin-cli", "-signet"] + cmd.split(" "),
-            capture_output=True,
-            encoding="utf-8")
-    if res.returncode == 0:
-        return res.stdout.strip()
-    else:
-        raise Exception(res.stderr.strip())
-
-
 # Recover the wallet state from the blockchain:
 # - Parse tprv and path from descriptor and derive 2000 key pairs and witness programs
 # - Request blocks 0-310 from Bitcoin Core via RPC and scan all transactions
 # - Return a state object with all the derived keys and total wallet balance
 def recover_wallet_state(tprv: str):
-    # Generate all the keypairs and witness programs to search for
-
-    extended_key_bytes = base58_decode(tprv)
+    # Generate addresses and keys
+    derivation_components = split_derivation_string(tprv)
+    extended_key_bytes = base58_decode(derivation_components.key)
     deserialized = deserialize_key(extended_key_bytes)
-    
-    # Derive using simple path m/0'/0
-    derivation_path = [
-        (0, True),     # Hardened master
-        (0, False),    # Unhardened children
-    ]
+    derivation_path = derivation_components.parse_path()
 
-    # Generate 2000 child keypairs from the derivation path
     privs = get_wallet_privs(deserialized.key, deserialized.chaincode, derivation_path)
-    
-    # Generate corresponding public keys
     pubs = [get_pub_from_priv(priv) for priv in privs]
-
-    # Generate witness programs (scriptPubKeys) to search for
     programs = [get_p2wpkh_program(pub) for pub in pubs]
 
-    # Create a lookup table for quick program -> privkey/pubkey mapping
-    program_to_keys = {
-        programs[i].hex(): {
-            "priv": privs[i].hex(),
-            "pub": pubs[i].hex()
-        } for i in range(len(programs))
-    }
+    # Create lookup sets
+    our_scripts = set(p.hex() for p in programs)
+    script_to_info = {}
+    
+    # Map scripts to their info
+    for i, program in enumerate(programs):
+        hex_script = program.hex()
+        script_info = json.loads(bcli(f"decodescript {hex_script}"))
+        script_to_info[hex_script] = {
+            "address": script_info["address"],
+            "pub": pubs[i].hex(),
+            "priv": privs[i].hex()
+        }
 
-
-    # Prepare a wallet state data structure
     state = {
         "utxo": {},
         "balance": 0,
-        "privs": privs,
-        "pubs": pubs,
-        "programs": programs
+        "transactions": []
     }
 
-    # Scan blocks 0-300
     height = 300
     for h in range(height + 1):
-        # Get block hash for current height
+
         block_hash = bcli(f"getblockhash {h}")
-        
-        # Get full block data
         block_data = json.loads(bcli(f"getblock {block_hash} 2"))
-        txs = block_data["tx"]
         
-        # Scan every transaction in the block
-        for tx in txs:
+        for tx in block_data["tx"]:
             tx_id = tx["txid"]
-            
-            # Check inputs (spending from our wallet)
-            if "vin" in tx:
-                for inp in tx["vin"]:
-                    if "txinwitness" in inp and len(inp["txinwitness"]) >= 2:
-                        # The second witness item is the public key
-                        witness_pubkey = inp["txinwitness"][1]
-                        
-                        # Check if this public key belongs to our wallet
-                        for i, pub in enumerate(pubs):
-                            if pub.hex() == witness_pubkey:
-                                # We found a spend from our wallet
-                                outpoint = f"{inp['txid']}:{inp['vout']}"
-                                if outpoint in state["utxo"]:
-                                    # Remove spent output from our UTXO set
-                                    amount = state["utxo"][outpoint]["amount"]
-                                    state["balance"] -= amount
-                                    del state["utxo"][outpoint]
             
             # Check outputs (receiving to our wallet)
             if "vout" in tx:
                 for out in tx["vout"]:
                     if "scriptPubKey" in out and "hex" in out["scriptPubKey"]:
-                        script_hex = out["scriptPubKey"]["hex"]
-                        
-                        # Check if this output is paying to one of our witness programs
-                        if script_hex in program_to_keys:
-                            # We found a receipt to our wallet
+                        script = out["scriptPubKey"]["hex"]
+                        if script in our_scripts:
                             amount = out["value"]
                             state["balance"] += amount
                             
-                            # Record the UTXO
                             outpoint = f"{tx_id}:{out['n']}"
                             state["utxo"][outpoint] = {
                                 "amount": amount,
-                                "script": script_hex,
-                                "priv": program_to_keys[script_hex]["priv"],
-                                "pub": program_to_keys[script_hex]["pub"]
+                                "script": script,
+                                "address": script_to_info[script]["address"],
+                                "priv": script_to_info[script]["priv"],
+                                "pub": script_to_info[script]["pub"]
                             }
-    
+                            
+                            state["transactions"].append({
+                                "type": "receive",
+                                "block": h,
+                                "txid": tx_id,
+                                "amount": amount,
+                                "address": script_to_info[script]["address"]
+                            })
+
+            # Check inputs (spending from our wallet)
+            if "vin" in tx:
+                for inp in tx["vin"]:
+                    if "txinwitness" in inp and len(inp["txinwitness"]) >= 2:
+                        witness_pubkey = inp["txinwitness"][1]
+                        outpoint = f"{inp['txid']}:{inp['vout']}"
+                        
+                        # Only process if it's spending one of our UTXOs
+                        if outpoint in state["utxo"]:
+                            utxo = state["utxo"][outpoint]
+                            if utxo["pub"] == witness_pubkey:
+                                amount = utxo["amount"]
+                                state["balance"] -= amount
+                                del state["utxo"][outpoint]
+                                
+                                state["transactions"].append({
+                                    "type": "spend",
+                                    "block": h,
+                                    "txid": tx_id,
+                                    "amount": amount,
+                                    "address": utxo["address"]
+                                })
+
     return state
 
-
 if __name__ == "__main__":
-    print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
+    print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']:.8f}")

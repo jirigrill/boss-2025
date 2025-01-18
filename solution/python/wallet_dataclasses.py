@@ -1,6 +1,5 @@
 from typing import Any, Union, Optional, Dict
 from dataclasses import dataclass
-from utils import bytes_to_hex
 
 @dataclass
 class DeserializedKey:
@@ -18,16 +17,16 @@ class DeserializedKey:
         if field is not None:
             value = getattr(self, field)
             if isinstance(value, bytes):
-                return bytes_to_hex(value)
+                return value.hex()
             raise ValueError(f"Field '{field}' is not bytes type")
 
         return {
-            'version': bytes_to_hex(self.version),
+            'version': self.version.hex(),
             'depth': self.depth,  # Not bytes
-            'parent_fingerprint': bytes_to_hex(self.parent_fingerprint),
+            'parent_fingerprint': self.parent_fingerprint.hex(),
             'child_number': self.child_number,  # Not bytes
-            'chaincode': bytes_to_hex(self.chaincode),
-            'key': bytes_to_hex(self.key),
+            'chaincode': self.chaincode.hex(),
+            'key': self.key.hex(),
             'key_type': self.key_type,  # Not bytes
             'network': self.network,  # Not bytes
         }
@@ -43,10 +42,10 @@ class DerivedKey:
         if field is not None:
             value = getattr(self, field)
             if isinstance(value, bytes):
-                return bytes_to_hex(value)
+                return value.hex()
             raise ValueError(f"Field '{field}' is not bytes type")
 
         return {
-            'key': bytes_to_hex(self.key),
-            'chaincode': bytes_to_hex(self.chaincode)
+            'key': self.key.hex(),
+            'chaincode': self.chaincode.hex()
         }
