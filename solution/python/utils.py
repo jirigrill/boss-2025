@@ -1,12 +1,32 @@
 from typing import Optional, List, Tuple, Dict, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import json
 from subprocess import run
+from wallet_dataclasses import UTXO, BitcoinAmount
 
 def validate_bytes_length(data: bytes, expected_length: int, name: str) -> None:
     """Validate length of bytes data."""
     if len(data) != expected_length:
         raise ValueError(f"Invalid {name} length: {len(data)} (should be {expected_length})")
+    
+def pretty_dict(data: dict | list) -> str:
+    """Convert a dictionary or list into a pretty-formatted string."""
+    return json.dumps(data, indent=4, default=str)
+
+def to_satoshis(amount_btc: float) -> int:
+    return int(amount_btc * 100_000_000)
+
+def enough_amount_for_transaction(utxo: UTXO, transaction_amount: BitcoinAmount, fee: BitcoinAmount) -> bool:
+    """
+    Check if UTXO has enough amount for given transaction_amount and fee
+    
+    Args:
+        utxo: UTXO to check
+        transaction_amount: Amount to send
+        fee: Transaction fee
+    """
+    return int(utxo['amount']['satoshis']) >= transaction_amount.satoshis + fee.satoshis
+    
 
 @dataclass
 class DerivationComponents:
@@ -88,3 +108,17 @@ def decode_script(hex_script: str) -> dict:
         return decoded
     except Exception as e:
         return {"error": str(e)}
+    
+
+def get_script_to_info(programs: list, pubs: list, privs: list) -> dict[str, Any]:
+    """Map scripts to their info"""
+    script_to_info = {}
+    for i, program in enumerate(programs):
+        hex_script = program.hex()
+        script_info = json.loads(bcli(f"decodescript {hex_script}"))
+        script_to_info[hex_script] = {
+            "address": script_info["address"],
+            "pub": pubs[i].hex(),
+            "priv": privs[i].hex()
+        }
+    return script_to_info
