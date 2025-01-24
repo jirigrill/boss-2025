@@ -5,8 +5,8 @@ if [ "$#" -ne 2 ]; then
 fi
 
 # Assign arguments to variables
-input_file="$1"
-output_directory="$2"
+output_directory="$1"
+input_file="$2"
 
 # Please fill in the version of the programming language you used here to help us with debugging if we run into problems!
 # version="{PLEASE FILL YOUR VERSION HERE}"

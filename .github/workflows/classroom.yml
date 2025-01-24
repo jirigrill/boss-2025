@@ -16,7 +16,7 @@ jobs:
       uses: classroom-resources/autograding-io-grader@v1
       with:
         test-name: Onion Packet
-        setup-command: "./submissions/run.sh $(pwd)/test/input.json $(pwd)"
+        setup-command: "./submissions/run.sh $(pwd) $(pwd)/test/input.json"
         command: "./test/onion_check.sh"
         input: ''
         expected-output: PASS

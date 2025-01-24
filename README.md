@@ -1,8 +1,5 @@
 # Onion Builder
 
-This challenge is an *optional* assignment for those looking to gain
-expertise in the dark arts of lightning network onion wrapping!
-
 In the route builder challenge, you learned how to generate the data
 that we put in _onion payloads_ that provide hops in the route with
 the information they need to forward payments. In this challenge, 
@@ -14,6 +11,8 @@ The use of onions in lightning is important because:
   or receiver.
 * It provides integrity, ensuring that forwarding node can't claim money
   that isn't theirs!
+
+May the HMACs be ever in your favor!
 
 ![image](layers.jpg)
 
@@ -33,8 +32,9 @@ We suggest that you consult the following resources as well:
 Write a program that accepts a json file containing the keys and 
 payloads for a lightning payment. Your program should accept two
 arguments:
-* 0: An absolute path to `input.json` (see format below)
-* 1: An absolute path that you should write your output files.
+* 0: An absolute path to the directory that you should write your 
+     output file to.
+* 1: An absolute path to `input.json` (see format below)
 
 You may import (or copy and attribute) code for the cryptographic
 primitives used in onion wrapping, such as:
