@@ -1,6 +1,6 @@
 #!/bin/bash
 if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 <input_file> <output_directory>"
+    echo "Usage: $0 <output_directory> <input_file>"
     exit 1
 fi
 

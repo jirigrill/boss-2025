@@ -49,8 +49,8 @@ the provided route.
 ### Input
 
 Your program should accept two command line arguments:
-* 0: An absolute path to `input.json` (see format below)
-* 1: An absolute path to the directory to write your output files.
+* 0: An absolute path to the directory to write your output files.
+* 1: An absolute path to `input.json` (see format below)
 
 ```
 {
