@@ -71,11 +71,11 @@ jobs:
           timeout: 10
           max-score: 1
 
-      - name: Basic MPP Path
-        id: mpp-path-003
+      - name: Multi Hop Path
+        id: multi-hop-path-003
         uses: classroom-resources/autograding-io-grader@v1
         with:
-          test-name: MPP Path
+          test-name: Multi Hop Path
           setup-command: ''
           command: echo "${{ env.PASS_003 }}"
           input: ''
@@ -103,7 +103,7 @@ jobs:
           CLEAN-RUN_RESULTS: "${{ steps.clean-run.outputs.result }}"
           BASIC-PATH-001_RESULTS: "${{ steps.basic-path-001.outputs.result }}"
           BASIC-PATH-002_RESULTS: "${{ steps.basic-path-002.outputs.result }}"
-          MPP-PATH-003_RESULTS: "${{ steps.mpp-path-003.outputs.result }}"
+          MULTI-HOP-PATH-003_RESULTS: "${{ steps.multi-hop-path-003.outputs.result }}"
           MPP-PATH-004_RESULTS: "${{ steps.mpp-path-004.outputs.result }}"
         with:
-          runners: clean-run, basic-path-001, basic-path-002, mpp-path-003, mpp-path-004
+          runners: clean-run, basic-path-001, basic-path-002, multi-hop-path-003, mpp-path-004
