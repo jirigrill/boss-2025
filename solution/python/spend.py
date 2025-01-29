@@ -1,7 +1,7 @@
 import hashlib
 from hashlib import sha256
 from ecdsa import SigningKey, SECP256k1
-from ecdsa.util import sigencode_der
+from ecdsa.util import number_to_string, sigencode_der
 from typing import List, Any
 from pathlib import Path
 from wallet_methods import (
@@ -266,27 +266,60 @@ def get_key_index(utxo: dict[str,Any], programs: List[str]) -> int:
         raise ValueError(f"Invalid UTXO format: {str(e)}")
 
 
+def make_canonical_der(r: int, s: int, order: int) -> bytes:
+    """Create canonical DER signature according to BIP66."""
+    # Convert integers to bytes with proper padding
+    r_bytes = number_to_string(r, order)
+    s_bytes = number_to_string(s, order)
+    
+    # Add leading zero byte if highest bit is set (for positive numbers)
+    if r_bytes[0] & 0x80:
+        r_bytes = b'\x00' + r_bytes
+    if s_bytes[0] & 0x80:
+        s_bytes = b'\x00' + s_bytes
+    
+    # Create DER structure
+    r_der = bytes([0x02, len(r_bytes)]) + r_bytes
+    s_der = bytes([0x02, len(s_bytes)]) + s_bytes
+    
+    # Total length excludes initial 0x30 marker and length byte
+    total_len = len(r_der) + len(s_der)
+    der_sig = bytes([0x30, total_len]) + r_der + s_der
+    
+    return der_sig
 
-# Given a private key and message digest as bytes, compute the ECDSA signature.
-# Bitcoin signatures:
-# - Must be strict-DER encoded
-# - Must have the SIGHASH_ALL byte (0x01) appended
-# - Must have a low s value as defined by BIP 62:
-#   https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki#user-content-Low_S_values_in_signatures
+def normalize_s(sig: bytes) -> bytes:
+    """Normalize the S value in DER signature to be always in lower half of curve order."""
+    # Extract R and S from DER
+    r_len = sig[3]
+    r = int.from_bytes(sig[4:4+r_len], 'big')
+    s_len = sig[5+r_len]
+    s = int.from_bytes(sig[6+r_len:6+r_len+s_len], 'big')
+    
+    # Get curve order
+    order = SECP256k1.order
+    
+    # Make S lower
+    if s > order // 2:
+        s = order - s
+        
+    return make_canonical_der(r, s, order)
+
 def sign(priv: bytes, msg: bytes) -> bytes:
     """
-    Sign a message using ECDSA with SECP256k1 curve.
+    Sign a message using ECDSA with SECP256k1 curve, ensuring low S value.
     
     Args:
         priv: Private key as bytes
         msg: Message (preimage hash) as bytes
         
     Returns:
-        bytes: DER signature with SIGHASH_ALL appended
+        bytes: Normalized DER signature with SIGHASH_ALL appended
     """
     signing_key = SigningKey.from_string(priv, curve=SECP256k1)
     signature = signing_key.sign_digest(msg, sigencode=sigencode_der)
-    return signature + b'\x01'
+    normalized_sig = normalize_s(signature)
+    return normalized_sig + b'\x01'  # Append SIGHASH_ALL
 
 
 # Given a private key and transaction commitment hash to sign,
