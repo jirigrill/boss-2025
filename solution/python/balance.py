@@ -45,7 +45,7 @@ def recover_wallet_state(tprv: str) -> WalletState:
     script_to_info = get_script_to_info(programs, pubs, privs)
     
     # Initialize wallet state
-    wallet_state = WalletState(privs=privs, programs=our_scripts)
+    wallet_state = WalletState(privs=privs, programs=[p.hex() for p in programs])
 
     # Scan blockchain
     height = 300

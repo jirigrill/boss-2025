@@ -1,4 +1,5 @@
 import hashlib
+from hashlib import sha256
 from ecdsa import SigningKey, SECP256k1
 from ecdsa.util import sigencode_der
 from typing import List, Any
@@ -17,7 +18,7 @@ from constants import (
     PUBKEY_HASH_LENGTH,
     P2WPKH_SCRIPTCODE_LENGTH
 )
-from utils import validate_bytes_length, pretty_dict, get_script_to_info, enough_amount_for_transaction
+from utils import validate_bytes_length, pretty_dict, get_script_to_info, enough_amount_for_transaction, serialize
 
 # Get directory where current file is located
 CURRENT_DIR = Path(__file__).parent
@@ -35,20 +36,20 @@ def create_multisig_script(keys: List[bytes]) -> bytes:
         if key[0:1] not in (PUBKEY_COMPRESSED_PREFIX_02, PUBKEY_COMPRESSED_PREFIX_03):
             raise ValueError("Invalid public key format")
     
-    # Sort keys for deterministic output
-    sorted_keys = sorted(keys)
     
     # Build script:
     # OP_2 <pubkey1> <pubkey2> OP_2 OP_CHECKMULTISIG
     script = (
         bytes([0x52])  # OP_2
         + bytes([0x21])  # Push 33 bytes
-        + sorted_keys[0]
+        + keys[0]
         + bytes([0x21])  # Push 33 bytes
-        + sorted_keys[1]
+        + keys[1]
         + bytes([0x52])  # OP_2
         + bytes([0xAE])  # OP_CHECKMULTISIG
     )
+
+
     return script
 
 # Given an output script as a byte array, compute the p2wsh witness program
@@ -59,7 +60,7 @@ def get_p2wsh_program(script: bytes, version: int=0) -> bytes:
     script_hash = hashlib.sha256(script).digest()
     # Create witness program:
     # [version_byte] [32-byte-hash]
-    # // edit [version_byte] ([0x20] for 32 bytes) [32-byte-hash]
+    # // edit [version_byte] [32-byte-hash]
     return bytes([version]) + bytes([0x20]) + script_hash
 
 
@@ -188,7 +189,9 @@ def get_p2wpkh_scriptcode(utxo: dict[str, Any]) -> bytes:
 # https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki#specification
 # We assume only a single input and two outputs,
 # as well as constant default values for sequence and locktime
-def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs: List[bytes], tx_version: int = 1) -> bytes:
+def get_commitment_hash(input_bytes: bytes, scriptcode: bytes, value: int, outputs: List[bytes], tx_version: int = 2) -> bytes:
+    outpoint = input_bytes[:36] # just the outpoint part
+
     def dsha256(data: bytes) -> bytes:
         return hashlib.new("sha256", hashlib.new("sha256", data).digest()).digest()
     # Version
@@ -209,6 +212,7 @@ def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs:
 
     # Value of output being spent
     value_bytes = value.to_bytes(8, byteorder='little', signed=True)
+
 
     # Sequence of output being spent (always default for us)
     # Using DEFAULT_SEQUENCE (0xFFFFFFFF)
@@ -231,12 +235,12 @@ def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs:
         outpoint +         # 36 bytes
         scriptcode +       # variable
         value_bytes +      # 8 bytes
-        sequence +         # 4 bytes
+        sequence +   # 4 bytes
         hash_outputs +     # 32 bytes
         locktime +         # 4 bytes
         hash_type          # 4 bytes
     )
-    
+
     # Return double SHA256 of the commitment
     return dsha256(commitment_data)
 
@@ -270,55 +274,19 @@ def get_key_index(utxo: dict[str,Any], programs: List[str]) -> int:
 # - Must have a low s value as defined by BIP 62:
 #   https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki#user-content-Low_S_values_in_signatures
 def sign(priv: bytes, msg: bytes) -> bytes:
-    """Sign a message digest using ECDSA with Bitcoin-specific requirements."""
-    # Keep signing until we produce a signature with "low s value"
-    # We will have to decode the DER-encoded signature and extract the s value to check it
-    # Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S] [sighash]
-
-    # Create signing key from private key bytes
-    try:
-        signing_key = SigningKey.from_string(priv, curve=SECP256k1)
-    except Exception as e:
-        raise ValueError(f"Invalid private key: {str(e)}")
-
-    # BIP 62: The order of the secp256k1 curve
-    n = SECP256k1.order
-
-    while True:
-        # Generate signature in DER format
-        signature = signing_key.sign_deterministic(
-            msg,
-            hashfunc=hashlib.sha256,
-            sigencode=sigencode_der
-        )
+    """
+    Sign a message using ECDSA with SECP256k1 curve.
+    
+    Args:
+        priv: Private key as bytes
+        msg: Message (preimage hash) as bytes
         
-        # Parse DER signature to extract R and S values
-        # DER format: 0x30 [total-len] 0x02 [R-len] [R] 0x02 [S-len] [S]
-        try:
-            # Skip 0x30 and total length
-            pos = 2
-            # Skip 0x02 and R length
-            r_len = signature[pos + 1]
-            pos += 2 + r_len
-            # Skip 0x02 and read S length
-            s_len = signature[pos + 1]
-            pos += 2
-            # Extract S value
-            s = int.from_bytes(signature[pos:pos + s_len], byteorder='big')
-            
-            # Check if S is > N/2 (BIP 62 low S requirement)
-            # If so, we need to negate it
-            half_n = n >> 1
-            if s > half_n:
-                continue
-                
-            # Valid low-S signature found
-            # Append SIGHASH_ALL byte
-            return signature + bytes([0x01])
-            
-        except (IndexError, ValueError) as e:
-            # Should never happen with valid ECDSA library
-            raise ValueError(f"Invalid DER signature generated: {str(e)}")
+    Returns:
+        bytes: DER signature with SIGHASH_ALL appended
+    """
+    signing_key = SigningKey.from_string(priv, curve=SECP256k1)
+    signature = signing_key.sign_digest(msg, sigencode=sigencode_der)
+    return signature + b'\x01'
 
 
 # Given a private key and transaction commitment hash to sign,
@@ -327,56 +295,37 @@ def sign(priv: bytes, msg: bytes) -> bytes:
 # https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#specification
 def get_p2wpkh_witness(priv: bytes, msg: bytes) -> bytes:
     """
-    Create a P2WPKH witness for transaction signing following BIP 141.
+    Create a P2WPKH witness following BIP141 format.
     
-    Args:
-        priv: Private key bytes
-        msg: Message digest to sign (commitment hash)
-        
-    Returns:
-        Serialized witness stack with signature and public key
-        
-    Format (BIP 141):
-    - var_int: number of witness stack items (2 for P2WPKH)
-    - For each stack item:
-        - var_int: length of item
-        - bytes: item data
-    Stack items are:
-    1. signature (with SIGHASH_ALL)
-    2. compressed public key
+    The witness for P2WPKH is simple:
+    1. Number of stack items (always 2)
+    2. First item: DER signature + SIGHASH_ALL (usually ~71-72 bytes)
+    3. Second item: Compressed public key (always 33 bytes)
+    
+    Each stack item is prefixed with a single byte length since
+    neither signatures nor public keys ever exceed 255 bytes.
     """
-    # Get signature using existing sign() function
+    # Get signature and public key
     signature = sign(priv, msg)
-    
-    # Get compressed public key from private key
     pubkey = get_pub_from_priv(priv)
     
-    # Start witness with var_int for number of items (2)
-    # Since it's < 0xfd, we can use a single byte
-    witness = bytes([0x02])  # var_int for 2 items
+    # Build witness stack
+    witness = bytes([0x02])  # Two witness elements
     
-    # Add signature as first stack item
+    # Add signature with correct length encoding
     sig_len = len(signature)
     if sig_len < 0xfd:
         witness += bytes([sig_len])
-    elif sig_len <= 0xffff:
-        witness += bytes([0xfd]) + sig_len.to_bytes(2, byteorder='little', signed=False)
-    elif sig_len <= 0xffffffff:
-        witness += bytes([0xfe]) + sig_len.to_bytes(4, byteorder='little', signed=False)
     else:
-        raise ValueError("Signature too long")
+        witness += bytes([0xfd]) + sig_len.to_bytes(2, byteorder='little')
     witness += signature
     
-    # Add compressed public key as second stack item
-    pubkey_len = len(pubkey)
-    if pubkey_len < 0xfd:
-        witness += bytes([pubkey_len])
-    elif pubkey_len <= 0xffff:
-        witness += bytes([0xfd]) + pubkey_len.to_bytes(2, byteorder='little', signed=False)
-    elif pubkey_len <= 0xffffffff:
-        witness += bytes([0xfe]) + pubkey_len.to_bytes(4, byteorder='little', signed=False)
+    # Add public key with correct length encoding
+    pub_len = len(pubkey)
+    if pub_len < 0xfd:
+        witness += bytes([pub_len])
     else:
-        raise ValueError("Public key too long")
+        witness += bytes([0xfd]) + pub_len.to_bytes(2, byteorder='little')
     witness += pubkey
     
     return witness
@@ -513,34 +462,33 @@ def assemble_transaction(inputs: List[bytes], outputs: List[bytes], witnesses: L
     # Initialize transaction buffer
     tx = bytearray()
     
-    # 4 bytes: version (always 2 for SegWit)
+    # Version
     tx.extend((2).to_bytes(4, byteorder='little', signed=False))
     
-    # 2 bytes: witness flag (0001)
+    # Segwit marker and flag
     tx.extend(bytes.fromhex("0001"))
     
-    # 1+ bytes: input count as varint
+    # Input count
     tx.extend(encode_varint(len(inputs)))
     
-    # 41+ bytes per input: input list
+    # Inputs
     for input_data in inputs:
         tx.extend(input_data)
     
-    # 1+ bytes: output count as varint
+    # Output count
     tx.extend(encode_varint(len(outputs)))
     
-    # 9+ bytes per output: output list
+    # Outputs
     for output_data in outputs:
         tx.extend(output_data)
     
-    # Variable size: witness data (one per input)
-    for witness_data in witnesses:
+    # Witness data
+    for i, witness_data in enumerate(witnesses):
         tx.extend(witness_data)
     
-    # 4 bytes: lock_time (0 = not locked)
+    # Locktime
     tx.extend((0).to_bytes(4, byteorder='little', signed=False))
     
-    # Convert to hex string
     return tx.hex()
 
 
@@ -593,7 +541,8 @@ def get_txid(inputs: List[bytes], outputs: List[bytes]) -> str:
 def spend_p2wpkh(state: WalletState) -> str:
     FEE = BitcoinAmount(1000)  # 1000 satoshis
     AMT = BitcoinAmount(1000000)  # 0.01 BTC in satoshis
-    
+
+
     selected_utxo = None
     for utxo in state.utxos:
         if enough_amount_for_transaction(utxo=utxo, transaction_amount=AMT, fee=FEE):
@@ -601,7 +550,7 @@ def spend_p2wpkh(state: WalletState) -> str:
             break
     if not selected_utxo:
         raise ValueError("No UTXO found with sufficient value")
-
+    
     # Create the input from the utxo
     # Reverse the txid hash so it's little-endian
     txid_bytes = bytes.fromhex(selected_utxo['txid'])
@@ -611,24 +560,30 @@ def spend_p2wpkh(state: WalletState) -> str:
     # Get public keys for 2-of-2 multisig
     pubkey1 = get_pub_from_priv(bytes.fromhex(state.privs[0]))
     pubkey2 = get_pub_from_priv(bytes.fromhex(state.privs[1]))
+
     multisig_script = create_multisig_script([pubkey1, pubkey2])
+
     witness_program = get_p2wsh_program(multisig_script)
+
     output1_bytes = output_from_options(witness_program, AMT.satoshis)
 
     # Compute change output script and output
     change_program = get_p2wpkh_program(get_pub_from_priv(bytes.fromhex(state.privs[0])))
+
     utxo_amount = BitcoinAmount(selected_utxo['amount']['satoshis'])
     change_amount = utxo_amount.satoshis - AMT.satoshis - FEE.satoshis
     output2_bytes = output_from_options(change_program, change_amount)
 
     # Get the message to sign
     scriptcode = get_p2wpkh_scriptcode(selected_utxo)
+
     msg = get_commitment_hash(
-        input_bytes[:36],  # just the outpoint part
+        input_bytes,  
         scriptcode,
         selected_utxo['amount']['satoshis'],
         [output1_bytes, output2_bytes]
     )
+
 
     # Fetch the private key we need to sign with
     key_index = get_key_index(selected_utxo, state.programs)
@@ -650,7 +605,6 @@ def spend_p2wpkh(state: WalletState) -> str:
     # For debugging you can use RPC `testmempoolaccept ["<final hex>"]` here
     
     return final_tx, txid
-
 
 
 # Spend a 2-of-2 multisig p2wsh utxo and return the txid
@@ -680,6 +634,4 @@ if __name__ == "__main__":
     recovered_wallet_state = WalletState.load_state(f"{CURRENT_DIR}/wallet_state.json")
     
     tx_hex, txid = spend_p2wpkh(recovered_wallet_state)
-
-    print(f"Transaction hex: {tx_hex}")
-    print(f"Transaction ID: {txid}")
+    print(tx_hex)

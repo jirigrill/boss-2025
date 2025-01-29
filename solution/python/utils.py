@@ -28,6 +28,26 @@ def enough_amount_for_transaction(utxo: UTXO, transaction_amount: BitcoinAmount,
     return int(utxo['amount']['satoshis']) >= transaction_amount.satoshis + fee.satoshis
     
 
+def serialize(*args) -> bytes | str:
+    """Adds all arguments together if they are of the same types"""
+    if not args:
+        raise TypeError("At least one argument must be provided")
+    
+    # Get the type of the first argument
+    expected_type = type(args[0])
+    
+    # Check if all arguments are of the same type
+    if not all(isinstance(arg, expected_type) for arg in args):
+        raise TypeError(f"All arguments must be of type {expected_type.__name__}")
+    
+    # Add all arguments
+    result = args[0]
+    for arg in args[1:]:
+        result += arg
+    
+    return result
+
+
 @dataclass
 class DerivationComponents:
     key: str
