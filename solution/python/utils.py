@@ -26,6 +26,16 @@ def enough_amount_for_transaction(utxo: UTXO, transaction_amount: BitcoinAmount,
         fee: Transaction fee
     """
     return int(utxo['amount']['satoshis']) >= transaction_amount.satoshis + fee.satoshis
+
+
+def is_utxo_unspent(txid: str, vout: int) -> bool:
+    try:
+        # gettxout returns None (empty string in our case) if the output is spent
+        result = bcli(f"gettxout {txid} {vout}")
+        return bool(result.strip())
+    except Exception as e:
+        # Log the error if needed
+        return False
     
 
 def serialize(*args) -> bytes | str:

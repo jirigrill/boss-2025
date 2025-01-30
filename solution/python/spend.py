@@ -18,7 +18,7 @@ from constants import (
     PUBKEY_HASH_LENGTH,
     P2WPKH_SCRIPTCODE_LENGTH
 )
-from utils import validate_bytes_length, pretty_dict, get_script_to_info, enough_amount_for_transaction, serialize
+from utils import validate_bytes_length, enough_amount_for_transaction, is_utxo_unspent
 
 # Get directory where current file is located
 CURRENT_DIR = Path(__file__).parent
@@ -213,7 +213,6 @@ def get_commitment_hash(input_bytes: bytes, scriptcode: bytes, value: int, outpu
     # Value of output being spent
     value_bytes = value.to_bytes(8, byteorder='little', signed=True)
 
-
     # Sequence of output being spent (always default for us)
     # Using DEFAULT_SEQUENCE (0xFFFFFFFF)
 
@@ -233,6 +232,7 @@ def get_commitment_hash(input_bytes: bytes, scriptcode: bytes, value: int, outpu
         hash_prevouts +     # 32 bytes
         hash_sequence +     # 32 bytes
         outpoint +         # 36 bytes
+        len(scriptcode).to_bytes()+
         scriptcode +       # variable
         value_bytes +      # 8 bytes
         sequence +   # 4 bytes
@@ -579,10 +579,12 @@ def spend_p2wpkh(state: WalletState) -> str:
     selected_utxo = None
     for utxo in state.utxos:
         if enough_amount_for_transaction(utxo=utxo, transaction_amount=AMT, fee=FEE):
-            selected_utxo = utxo
-            break
+            if is_utxo_unspent(utxo["txid"], utxo["vout"]):
+                selected_utxo = utxo
+                break
     if not selected_utxo:
         raise ValueError("No UTXO found with sufficient value")
+    
     
     # Create the input from the utxo
     # Reverse the txid hash so it's little-endian
@@ -641,30 +643,72 @@ def spend_p2wpkh(state: WalletState) -> str:
 
 
 # Spend a 2-of-2 multisig p2wsh utxo and return the txid
-def spend_p2wsh(state: object, txid: str) -> str:
-    COIN_VALUE = 1000000
-    FEE = 1000
-    AMT = 0
-    # Create the input from the utxo
-    # Reverse the txid hash so it's little-endian
+def spend_p2wsh(state: WalletState, txid: str) -> str:
+    """
+    Spend a 2-of-2 multisig P2WSH output to an OP_RETURN output.
+    """
+    # Constants
+    INPUT_VALUE = 1000000  # Value from previous tx in satoshis
+    FEE = 1000  # Fee in satoshis
+    NAME = "jirig"  # Name to encode in OP_RETURN
+    
+    # Create input from the UTXO
+    txid_bytes = bytes.fromhex(txid)
+    input_bytes = input_from_utxo(txid_bytes, 0)
+    
+    # Create OP_RETURN output
+    data = NAME.encode('ascii')
+    output1_bytes = output_from_options(bytes([0x6a, len(data)]) + data, 0)
+    
+    # Create change output
+    change_program = get_p2wpkh_program(get_pub_from_priv(bytes.fromhex(state.privs[0])))
+    change_amount = INPUT_VALUE - FEE
+    output2_bytes = output_from_options(change_program, change_amount)
 
-    # Compute destination output script and output
-
-    # Compute change output script and output
-
+    # Get public keys and create witness script IN THE SAME ORDER
+    pubkey1 = get_pub_from_priv(bytes.fromhex(state.privs[0]))
+    pubkey2 = get_pub_from_priv(bytes.fromhex(state.privs[1]))
+    witness_script = create_multisig_script([pubkey1, pubkey2])
+    
     # Get the message to sign
-
-    # Sign!
-
-    # Assemble
-
-    # For debugging you can use RPC `testmempoolaccept ["<final hex>"]` here
-    return "finalhex"
+    msg = get_commitment_hash(
+        input_bytes,
+        witness_script,
+        INPUT_VALUE,
+        [output1_bytes, output2_bytes]
+    )
+    
+    # Sign with BOTH private keys IN THE SAME ORDER as public keys
+    sig1 = sign(bytes.fromhex(state.privs[0]), msg)
+    sig2 = sign(bytes.fromhex(state.privs[1]), msg)
+    
+    
+    # Create witness with 4 items
+    witness = (
+        bytes([0x04])  # Number of witness items
+        + bytes([0x00])  # Empty bytes for CHECKMULTISIG bug
+        + bytes([len(sig1)]) + sig1  # First signature
+        + bytes([len(sig2)]) + sig2  # Second signature
+        + bytes([len(witness_script)]) + witness_script  # Witness script
+    )
+    
+    # Assemble final transaction
+    final_tx = assemble_transaction(
+        [input_bytes],
+        [output1_bytes, output2_bytes],
+        [witness]
+    )
+    
+    return final_tx
 
 
 if __name__ == "__main__":
     # Recover wallet state: We will need all key pairs and unspent coins
     recovered_wallet_state = WalletState.load_state(f"{CURRENT_DIR}/wallet_state.json")
     
-    tx_hex, txid = spend_p2wpkh(recovered_wallet_state)
+    # tx_hex, txid = spend_p2wpkh(recovered_wallet_state)
+    # print(tx_hex)
+
+    tx_hex = spend_p2wsh(recovered_wallet_state, "acfeb23316050fc6824ecf4c40a612713c67cc09d8ee43dbdab4ddd2a1a11139")
     print(tx_hex)
+    

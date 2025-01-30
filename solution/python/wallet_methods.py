@@ -211,7 +211,7 @@ def get_p2wpkh_program(pubkey: bytes, version: int=0) -> bytes:
     # Double hash the public key
     sha256_hash = hashlib.sha256(pubkey).digest()
     ripemd160_hash = hashlib.new('ripemd160', sha256_hash).digest()
-    
+
     # Construct the witness program
     # OP_n (version) + push_20 + hash
     witness_program = bytes([version]) + bytes([0x14]) + ripemd160_hash
