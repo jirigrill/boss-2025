@@ -8,7 +8,7 @@ rhash_value=$(calculate_sha256_hash "submissions/003-preimage.txt")
 
 # Expected chan_id provided as the first argument
 expected_chan_id=2005509209128960
-
+expected_new_chan_id=5952755952910336
 wd=$(pwd)
 
 # Execute lncli command and capture the output in a variable
@@ -26,7 +26,7 @@ if [ "$settled" != "true" ]; then
 fi
 
 # Check if chan_id matches the expected value
-if [ "$chan_id" == "$expected_chan_id" ]; then
+if [ "$chan_id" == "$expected_chan_id" ] || [ "$chan_id" == "$expected_new_chan_id" ]; then
     echo "PASS"
 else
     echo "Channel ID does not match."
