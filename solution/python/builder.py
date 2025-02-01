@@ -1,5 +1,6 @@
 from typing import List
 import sys
+import os
 from solution.python.transaction import MempoolTransaction
 from solution.python.utils import parse_mempool_csv, write_block_to_file
 from solution.python.comparison import BlockBuilderComparison
@@ -45,8 +46,12 @@ class BlockBuilder:
             print(f"  Fee Rate: {stats['fee_rate']:.4f}")
 
 def main():
+
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    MEMPOOL_PATH = os.path.join(BASE_DIR, 'mempool.csv')
+
     try:
-        transactions = parse_mempool_csv('../mempool.csv')
+        transactions = parse_mempool_csv(MEMPOOL_PATH)
         builder = BlockBuilder(transactions)
         block = builder.construct_block()
         write_block_to_file(block)

@@ -1,10 +1,12 @@
 #!/bin/bash
 
-# Get the directory where the script is located
+# Get absolute paths
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
 
-# Add the parent directory to PYTHONPATH so Python can find our modules
+# Set PYTHONPATH
 export PYTHONPATH="$SCRIPT_DIR/.."
 
-# Run the builder script using the correct relative path
-python "$SCRIPT_DIR/python/builder.py"
+# Run builder from its directory
+cd python
+python builder.py
