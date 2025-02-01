@@ -6,20 +6,24 @@ open a channel and pay the invoice that you have been assigned.
 
 ## January 2024 Cohort Details
 
-We will use *two* signet lightning nodes for this assignment, called `lnd0` and 
-`lnd1`. The connection details for each node is provided below.
+We will use *two* signet lightning nodes for this assignment, called `lnd2` and 
+`lnd3`. The connection details for each node is provided below.
 
-### LND0
+NOTE: We are using nodes `lnd2` and `lnd3` because there were issues
+with the first nodes set up for this challenge! You can follow along
+our [bug report here](https://github.com/lightningnetwork/lnd/issues/9466)!
 
-Lightning node P2P address: `boss2025.xyz:9735`
+### LND2
 
-Lightning node pubkey: `03366b5ce6d3fd6f8728a86fb04fac5510965af930630a584a66dd244b3081cfe5`
+Lightning node P2P address: `boss2025.xyz:9737`
 
-### LND1
+Lightning node pubkey: `03ebc7280ff486f94cee51cff45a0fc521e9fe2560c02563ab191552fa90d4017d`
 
-Lightning node P2P address: `boss2025.xyz:9736`
+### LND3
 
-Lightning node pubkey: `037c3565e3c335886e44082b1cf14e081e1a030605b5b7925680954c2bc6ea1394`
+Lightning node P2P address: `boss2025.xyz:9738`
+
+Lightning node pubkey: `02ef09cab9ba578cfa5158d6951148a276cbb005bba5d61b8f630b75769d8df3f5`
 
 
 ## Node setup
@@ -99,13 +103,13 @@ recommend 50,000 satoshis per channel.
 
 ### 1. Pay your Invoice
 
-Use your lightning node to pay the invoice belonging to `lnd0` that you have 
+Use your lightning node to pay the invoice belonging to `lnd2` that you have 
 been assigned for task one, found by looking up your wallet number in 
 [test/001-invoice_list.txt](test/001-invoice_list.txt). The string starting 
 `lntbs` is your payment request.
 
 The basic steps that you will need to follow are: 
-* Open an unannounced channel to `lnd0`.
+* Open an unannounced channel to `lnd2`.
 * Use your lightning node's cli to pay the invoice
 * Submit the invoice's preimage
 
@@ -133,16 +137,16 @@ participant in the channel you are looking up.
 ### 3. Custom Route Payment
 
 Use your lightning node to pay an invoice over a custom route. The signet 
-nodes provided are connected with a channel: `lnd0 --- lnd1`.
+nodes provided are connected with a channel: `lnd2 --- lnd3`.
 
 Your task is to send a payment over the following route: 
-`your node --- lnd1 --- lnd0`.
+`your node --- lnd3 --- lnd2`.
 
-As in task 1, the invoice belongs to `lnd0`, and is found by looking up your 
+As in task 1, the invoice belongs to `lnd2`, and is found by looking up your 
 wallet number in [test/003-invoice_list.txt](test/003-invoice_list.txt).
 
 To do this, you will need to: 
-* Open an unannounced channel to `lnd1`.
+* Open an unannounced channel to `lnd3`.
 * Use `lncli` to send your payment over a custom route.
 
 Note: if you accidentally pay your invoice over the wrong route, please request
@@ -162,18 +166,18 @@ following in the [submissions](/submissions) directory:
     <summary>Setup Assignments</summary>
 
 This assignment requires two LND nodes, running on signet that are connected 
-with a large channel. They will be referred to as `lnd0` and `lnd1`, and sample 
+with a large channel. They will be referred to as `lnd2` and `lnd3`, and sample 
 config files are provided [here](/conf).
 
 Steps to set up:
-* Run `lnd0`: `lnd --bitcoin.signet`
-* Run `lnd1`: `lnd --bitcoin.signet --lnddir=.lnd1`
+* Run `lnd2`: `lnd --bitcoin.signet`
+* Run `lnd3`: `lnd --bitcoin.signet --lnddir=.lnd1`
 * Fund each node with coins and mine 6 blocks to make the funds available. 
-* Open a channel from `lnd1` to `lnd0` using [channel-setup.sh](./channel-setup.sh).
+* Open a channel from `lnd3` to `lnd2` using [channel-setup.sh](./channel-setup.sh).
 * Mine 6 blocks to confirm the channel.
 * Open ports `9735` and `9736` so that students can connect to LND.
-* Open port `10009` so that the CI can check values on `lnd0`.
-* Use `lnd0/1 getinfo` to provide the public key and IP address of each node 
+* Open port `10009` so that the CI can check values on `lnd2`.
+* Use `lnd2/1 getinfo` to provide the public key and IP address of each node 
   in the section above.
 
 ### Assignment 1
@@ -199,13 +203,13 @@ Assignment Setup - Create Invoices:
   autograder with value to check student solutions against.
 
 Assignment Setup - CI Checks: 
-* Copy the following artifacts for `lnd0` to allow the CI query it:
-  * `tls.cert` -> [test/lnd0-tls.cert](./test/lnd0-tls.cert).
-  * `/data/chain/bitcoin/signet/readonly.macaroon` -> [test/lnd0-readonly.macaroon](./test/lnd0-readonly.macaroon)
+* Copy the following artifacts for `lnd2` to allow the CI query it:
+  * `tls.cert` -> [test/lnd2-tls.cert](./test/lnd0-tls.cert).
+  * `/data/chain/bitcoin/signet/readonly.macaroon` -> [test/lnd2-readonly.macaroon](./test/lnd0-readonly.macaroon)
 
 
 Note: It is possible that many student attempts may unbalance the channel you 
-open (ie, `lnd1` runs out of liquidity to send to `lnd0`). If students 
+open (ie, `lnd3` runs out of liquidity to send to `lnd2`). If students 
 complain about `TEMPORARY_CHANNEL_FAILURE` check up on your nodes and re-run 
 [channel-setup.sh](./channel-setup.sh) if necessary.
 
