@@ -7,12 +7,11 @@ source test/preimage_utils.sh
 rhash_value=$(calculate_sha256_hash "submissions/003-preimage.txt")
 
 # Expected chan_id provided as the first argument
-expected_chan_id=2005509209128960
-expected_new_chan_id=5952755952910336
+expected_chan_id=6102289534222336
 wd=$(pwd)
 
 # Execute lncli command and capture the output in a variable
-lncli_output=$(lncli -n=signet --macaroonpath="$wd"/test/lnd0-readonly.macaroon --tlscertpath="$wd"/test/lnd0-tls.cert --rpcserver=boss2025.xyz:10009 lookupinvoice --rhash="$rhash_value")
+lncli_output=$(lncli -n=signet --macaroonpath="$wd"/test/lnd2-readonly.macaroon --tlscertpath="$wd"/test/lnd2-tls.cert --rpcserver=boss2025.xyz:10007 lookupinvoice --rhash="$rhash_value")
 
 # Extract r_preimage, chan_id, and settled from the lncli output
 r_preimage=$(echo "$lncli_output" | jq -r '.r_preimage')
@@ -26,7 +25,7 @@ if [ "$settled" != "true" ]; then
 fi
 
 # Check if chan_id matches the expected value
-if [ "$chan_id" == "$expected_chan_id" ] || [ "$chan_id" == "$expected_new_chan_id" ]; then
+if [ "$chan_id" == "$expected_chan_id" ]; then
     echo "PASS"
 else
     echo "Channel ID does not match."
