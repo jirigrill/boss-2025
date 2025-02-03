@@ -8,3 +8,4 @@ channel_id="6102289534222336"
 # You may comment it out and use your own testing node if you would like, but this line *must* be uncommented when you push to test.
 wd=$(pwd)
 lncli="lncli -n=signet --rpcserver=boss2025.xyz:10007 --tlscertpath="$wd"/test/lnd2-tls.cert --macaroonpath="$wd"/test/lnd2-readonly.macaroon "
+$lncli getchaninfo $channel_id | jq '.node2_policy.fee_base_msat'
