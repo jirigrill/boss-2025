@@ -12,7 +12,7 @@ payment_request_hex="$3"
 current_block_height="$4"
 
 # Please fill in the version of the programming language you used here to help us with debugging if we run into problems!
-# version="{PLEASE FILL YOUR VERSION HERE}"
+version="test"
 
 # Check if the 'version' variable is not null
 if [ -z "$version" ]; then
