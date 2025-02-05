@@ -43,7 +43,8 @@ struct OutputRecord {
 
 fn parse_amount(invoice: &str) -> Result<u64, Box<dyn Error>> {
     let re = Regex::new(r"lnbcrt(\d+)([munp])?1")?;
-    let captures = re.captures(&invoice.to_lowercase())
+    let lowercase_invoice = invoice.to_lowercase();
+    let captures = re.captures(&lowercase_invoice)
         .ok_or("Invalid invoice format")?;
     
     let amount: u64 = captures.get(1)
