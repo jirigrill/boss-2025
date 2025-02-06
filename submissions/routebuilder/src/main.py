@@ -1,6 +1,7 @@
 import sys
 import csv
 import re
+from bolt11 import decode
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +13,11 @@ class RouteHop:
     cltv_delta: int
     base_fee_msat: int
     proportional_fee_ppm: int
+
+@dataclass
+class InvoiceInfo:
+    amount_msat: int
+    min_final_cltv_expiry: int
 
 
 def parse_hops(input_file_path: str) -> list[RouteHop]:
@@ -31,30 +37,28 @@ def parse_hops(input_file_path: str) -> list[RouteHop]:
         raise ValueError(f"Error reading input file: {e}")
 
 
-def parse_amount(invoice: str) -> int:
-    """
-    Parse the amount from a invoice.
-    Returns amount in millisatoshis.
-    """
+def parse_invoice(invoice: str) -> InvoiceInfo:
+    """Parse both amount and min_final_cltv_expiry from a Lightning Network invoice."""
     # Extract the amount part from the invoice
     # Format is: lnbcrt[amount][multiplier]
-    match = re.match(r'lnbcrt(\d+)([munp])?1', invoice.lower())
-    if not match:
-        raise ValueError("Invalid invoice format")
-    
-    amount, multiplier = match.groups()
-    amount = int(amount)
-    
-    # Convert to millisatoshis based on multiplier
-    multipliers = {
-        'm': 100_000_000,  # milli (100,000,000 msats = 1 mBTC)
-        'u': 100,          # micro
-        'n': 0.1,         # nano
-        'p': 0.0001,      # pico
-        None: 100_000_000_000  # no multiplier means BTC
-    }
-    return int(amount * multipliers[multiplier])
-
+    try:
+        # Decode the complete invoice using bolt11 library
+        decoded = decode(invoice)
+        
+        # Extract the amount, ensuring it exists
+        if decoded.amount_msat is None:
+            raise ValueError("Invoice does not specify an amount")
+            
+        # Get min_final_cltv_expiry (bolt11 provides default of 9 if not specified)
+        cltv_expiry = decoded.min_final_cltv_expiry
+        
+        return InvoiceInfo(
+            amount_msat=decoded.amount_msat,
+            min_final_cltv_expiry=cltv_expiry
+        )
+        
+    except Exception as e:
+        raise ValueError(f"Failed to parse invoice: {str(e)}")
 
 def calculate_fees(amount_msat: int, hop: RouteHop) -> int:
     """Calculate fees for a hop based on base fee and proportional fee."""
@@ -72,14 +76,16 @@ def compute_htlc_amounts(hops: list[RouteHop], invoice_amount: int) -> list[int]
     return htlc_amounts[::-1]  # Reverse to match forward route order
 
 
-def compute_htlc_expiry(hops: list[RouteHop], current_block_height: int) -> list[int]:
-    """Calculate HTLC expiry forward (from source to destination)"""
-    expiry = current_block_height
-    htlc_expiries = []
-    for hop in hops:
+def compute_htlc_expiry(hops: list[RouteHop], current_block_height: int, min_final_cltv_expiry_delta: int) -> list[int]:
+    """Calculate HTLC expiry backward (from destination to source)"""
+    expiry = min_final_cltv_expiry_delta+current_block_height
+    htlc_expiries = [expiry]
+    reversed_hops = list(reversed(hops))[:-1]
+    for hop in reversed_hops:
         expiry += hop.cltv_delta
         htlc_expiries.append(expiry)
-    return htlc_expiries
+    # convert it back 
+    return htlc_expiries[::-1]
 
 
 def prepare_output_data(hops: RouteHop, htlc_amounts: list[int], htlc_expiries: list[int]) -> list[Any]:
@@ -104,7 +110,7 @@ def process_route(
 ) -> None:
      # Parse the payment amount from BOLT11 invoice
     try:
-        payment_amount_msat = parse_amount(payment_request_hex)
+        invoice_info = parse_invoice(payment_request_hex)
     except ValueError as e:
         raise ValueError(f"Error parsing payment request: {e}")
 
@@ -115,10 +121,10 @@ def process_route(
         raise ValueError(f"Error reading input file: {e}")
 
     # Calculate HTLC amounts
-    htlc_amounts = compute_htlc_amounts(hops, payment_amount_msat)
+    htlc_amounts = compute_htlc_amounts(hops, invoice_info.amount_msat)
 
     # Calculate HTLC expiry 
-    htlc_expiries = compute_htlc_expiry(hops, current_block_height)
+    htlc_expiries = compute_htlc_expiry(hops, current_block_height, invoice_info.min_final_cltv_expiry)
 
     # Prepare output data
     output_data = prepare_output_data(hops, htlc_amounts, htlc_expiries)

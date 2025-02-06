@@ -3,7 +3,8 @@ use std::error::Error;
 use std::fs::File;
 use serde::{Deserialize, Serialize};
 use clap::Parser;
-use regex::Regex;
+use lightning_invoice::Bolt11Invoice;
+
 
 // Command line argument structure using clap
 #[derive(Parser, Debug)]
@@ -41,29 +42,27 @@ struct OutputRecord {
     tlv: String,
 }
 
-fn parse_amount(invoice: &str) -> Result<u64, Box<dyn Error>> {
-    let re = Regex::new(r"lnbcrt(\d+)([munp])?1")?;
-    let lowercase_invoice = invoice.to_lowercase();
-    let captures = re.captures(&lowercase_invoice)
-        .ok_or("Invalid invoice format")?;
+struct InvoiceInfo {
+    amount_msat: u64,
+    min_final_cltv_expiry: u32,
+}
+
+fn parse_invoice(invoice_str: &str) -> Result<InvoiceInfo, Box<dyn Error>> {
+    // Parse the invoice string into a Bolt11Invoice
+    let invoice: Bolt11Invoice = invoice_str.parse()
+        .map_err(|e| format!("Failed to parse invoice: {}", e))?;
     
-    let amount: u64 = captures.get(1)
-        .ok_or("Missing amount")?
-        .as_str()
-        .parse()?;
+    // Extract amount in millisatoshis
+    let amount_msat = invoice.amount_milli_satoshis()
+        .ok_or("Invoice does not specify an amount")?;
     
-    let multiplier = captures.get(2).map(|m| m.as_str());
+    // Get min_final_cltv_expiry (defaults to 18 as per BOLT-11 spec)
+    let min_final_cltv_expiry = invoice.min_final_cltv_expiry_delta().try_into().unwrap();
     
-    let msats = match multiplier {
-        Some("m") => amount * 100_000_000,
-        Some("u") => amount * 100,
-        Some("n") => (amount as f64 * 0.1) as u64,
-        Some("p") => (amount as f64 * 0.0001) as u64,
-        None => amount * 100_000_000_000,
-        _ => return Err("Invalid multiplier".into()),
-    };
-    
-    Ok(msats)
+    Ok(InvoiceInfo {
+        amount_msat,
+        min_final_cltv_expiry,
+    })
 }
 
 fn calculate_fees(amount_msat: u64, hop: &RouteHop) -> u64 {
@@ -81,21 +80,27 @@ fn compute_htlc_amounts(hops: &[RouteHop], invoice_amount: u64) -> Vec<u64> {
     amounts.into_iter().rev().collect()
 }
 
-fn compute_htlc_expiry(hops: &[RouteHop], current_block_height: u32) -> Vec<u32> {
-    let mut expiry = current_block_height;
-    let mut expiries = Vec::with_capacity(hops.len());
+fn compute_htlc_expiry(
+    hops: &[RouteHop], 
+    current_block_height: u32,
+    min_final_cltv_expiry_delta: u32
+) -> Vec<u32> {
+    // Start with final expiry (matching Python behavior)
+    let mut expiry = current_block_height + min_final_cltv_expiry_delta;
+    let mut expiries = vec![expiry];
     
-    for hop in hops {
+    // Calculate expiries backwards, skipping last hop
+    for hop in hops.iter().rev().skip(1) {
         expiry += hop.cltv_delta;
         expiries.push(expiry);
     }
     
-    expiries
+    expiries.into_iter().rev().collect()
 }
 
 fn process_route(args: &Args) -> Result<(), Box<dyn Error>> {
     // Parse payment amount
-    let payment_amount_msat = parse_amount(&args.payment_request_hex)?;
+    let invoice_info = parse_invoice(&args.payment_request_hex)?;
     
     // Read and parse input CSV
     let input_file = File::open(&args.input_file)?;
@@ -103,8 +108,8 @@ fn process_route(args: &Args) -> Result<(), Box<dyn Error>> {
     let hops: Vec<RouteHop> = reader.deserialize().collect::<Result<_, _>>()?;
     
     // Calculate HTLC amounts and expiries
-    let htlc_amounts = compute_htlc_amounts(&hops, payment_amount_msat);
-    let htlc_expiries = compute_htlc_expiry(&hops, args.current_block_height);
+    let htlc_amounts = compute_htlc_amounts(&hops, invoice_info.amount_msat);
+    let htlc_expiries = compute_htlc_expiry(&hops, args.current_block_height, invoice_info.min_final_cltv_expiry);
     
     // Prepare and write output
     let output_path = args.output_dir.join("output.csv");
