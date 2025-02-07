@@ -74,9 +74,8 @@ fn parse_invoice(invoice_str: &str) -> Result<InvoiceInfo, Box<dyn Error>> {
         .map_err(|e| format!("Failed to parse invoice: {}", e))?;
     
     // Extract amount in millisatoshis
-    // let amount_msat = invoice.amount_milli_satoshis()
-    //     .ok_or("Invoice does not specify an amount")?;
-    let amount_msat = 199999998;
+    let amount_msat = invoice.amount_milli_satoshis()
+        .ok_or("Invoice does not specify an amount")?;
     
     // Get min_final_cltv_expiry (defaults to 18 as per BOLT-11 spec)
     let min_final_cltv_expiry = invoice.min_final_cltv_expiry_delta().try_into().unwrap();
@@ -130,7 +129,6 @@ fn allocate_amounts_to_paths(paths: &mut Vec<Path>, total_amount_msat: u64) {
         path.amount_msat = base_amount;
     }
 }
-
 
 fn calculate_fees(amount_msat: u64, hop: &RouteHop) -> u64 {
     let proportional_fee = (amount_msat * hop.proportional_fee_ppm as u64) / 1_000_000;

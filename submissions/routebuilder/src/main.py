@@ -95,8 +95,7 @@ def parse_invoice(invoice: str) -> InvoiceInfo:
         cltv_expiry = decoded.min_final_cltv_expiry
         
         return InvoiceInfo(
-            #amount_msat=decoded.amount_msat,
-            amount_msat=199999998,
+            amount_msat=decoded.amount_msat,
             min_final_cltv_expiry=cltv_expiry
         )
         
