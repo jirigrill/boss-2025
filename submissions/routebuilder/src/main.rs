@@ -171,9 +171,16 @@ fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
     // Parse invoice info from the payment request
     let invoice_info = parse_invoice(&args.payment_request_hex)?;
     
-    // Read and parse input CSV containing route hops
-    let input_file = File::open(&args.input_file)?;
-    let mut reader = csv::Reader::from_reader(input_file);
+    // Read the input file content
+    let file_content = std::fs::read_to_string(&args.input_file)?;
+    
+    // Print the file content to console
+    println!("Input file contents:");
+    println!("{}", file_content);
+    
+    // Create CSV reader from the content string
+    let mut reader = csv::ReaderBuilder::new()
+        .from_reader(file_content.as_bytes());
     let hops: Vec<RouteHop> = reader.deserialize().collect::<Result<_, _>>()?;
     
     // Group hops into distinct paths and allocate payment amounts
