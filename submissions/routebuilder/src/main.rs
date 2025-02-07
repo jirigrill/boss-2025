@@ -136,13 +136,19 @@ fn calculate_fees(amount_msat: u64, hop: &RouteHop) -> u64 {
 }
 
 fn compute_htlc_amounts(hops: &[RouteHop], invoice_amount: u64) -> Vec<u64> {
-    let mut amounts = vec![invoice_amount];
-    for hop in hops.iter().rev().skip(1) {
+    let mut amounts = vec![invoice_amount];  // Start with final amount
+    
+    // First reverse all hops, then take all but the last one
+    let reversed_hops: Vec<_> = hops.iter().rev().collect();
+    let hops_to_process = &reversed_hops[..reversed_hops.len()-1];
+    
+    for hop in hops_to_process {
         let next_amount = *amounts.last().unwrap();
         let amount_with_fees = next_amount + calculate_fees(next_amount, hop);
         amounts.push(amount_with_fees);
     }
-    amounts.into_iter().rev().collect()
+    
+    amounts.into_iter().rev().collect()  // Reverse to match forward route order
 }
 
 fn compute_htlc_expiry(
@@ -150,7 +156,7 @@ fn compute_htlc_expiry(
     current_block_height: u32,
     min_final_cltv_expiry_delta: u32
 ) -> Vec<u32> {
-    // Start with final expiry (matching Python behavior)
+    // Start with final expiry
     let mut expiry = current_block_height + min_final_cltv_expiry_delta;
     let mut expiries = vec![expiry];
     
@@ -171,16 +177,9 @@ fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
     // Parse invoice info from the payment request
     let invoice_info = parse_invoice(&args.payment_request_hex)?;
     
-    // Read the input file content
-    let file_content = std::fs::read_to_string(&args.input_file)?;
-    
-    // Print the file content to console
-    println!("Input file contents:");
-    println!("{}", file_content);
-    
-    // Create CSV reader from the content string
-    let mut reader = csv::ReaderBuilder::new()
-        .from_reader(file_content.as_bytes());
+    // Read and parse input CSV containing route hops
+    let input_file = File::open(&args.input_file)?;
+    let mut reader = csv::Reader::from_reader(input_file);
     let hops: Vec<RouteHop> = reader.deserialize().collect::<Result<_, _>>()?;
     
     // Group hops into distinct paths and allocate payment amounts

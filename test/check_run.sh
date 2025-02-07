@@ -5,6 +5,9 @@ pay_request="lnbcrt2m1pju8yyypp5fw792f22sn3fkf7v6s9ts8qqp4pctwrxh2lngsjjd04meyqr
 
 output=$(./submissions/run.sh "$wd" "$wd/test/input.csv" "$pay_request" 500)
 
+pay_request3="lnbcrt5u1pjm6rg2pp5k5zsnvpc7ssclkpen2lggkhyz4a80g92ft4cr4q5h8lu637wtdvqdqqcqzpgxqyz5vqsp5gvahr9wj6cnf7dun7shls9w445hsc6jhsfjr7pywrl66k8vrauks9qyyssq46c4xvws54tuew5a6gfy7cz7jdp3c0a209fn3npjm02yt87ful2jyck5vyurgu4pja3xhhswrs640gxdk64zr7pvma4cnl5werv2yscqgtda05"
+#output=$(./submissions/run.sh "$wd" "$wd/test/input3.csv" "$pay_request3" 400)
+
 # Check the exit status
 if [ $? -eq 0 ]; then
     echo "BUILD CHECK PASSED: this **does not** mean your code is correct, it is just a minimal build check."

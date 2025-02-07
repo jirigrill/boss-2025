@@ -90,13 +90,10 @@ def parse_invoice(invoice: str) -> InvoiceInfo:
         # Extract the amount, ensuring it exists
         if decoded.amount_msat is None:
             raise ValueError("Invoice does not specify an amount")
-            
-        # Get min_final_cltv_expiry (bolt11 provides default of 9 if not specified)
-        cltv_expiry = decoded.min_final_cltv_expiry
         
         return InvoiceInfo(
             amount_msat=decoded.amount_msat,
-            min_final_cltv_expiry=cltv_expiry
+            min_final_cltv_expiry=decoded.min_final_cltv_expiry
         )
         
     except Exception as e:
@@ -110,11 +107,11 @@ def calculate_fees(amount_msat: int, hop: RouteHop) -> int:
 def compute_htlc_amounts(hops: list[RouteHop], invoice_amount: int) -> list[int]:
     """Calculate HTLC amounts backward (from destination to source)"""
     htlc_amounts = [invoice_amount]  # Start with final amount
-    for hop in reversed(hops[:-1]):  # Skip last hop when calculating fees
+    for hop in list(reversed(hops))[:-1]:  # Skip last hop when calculating fees
         next_amount = htlc_amounts[-1]
         amount_with_fees = next_amount + calculate_fees(next_amount, hop)
         htlc_amounts.append(amount_with_fees)
-    return htlc_amounts[::-1]  # Reverse to match forward route order
+    return htlc_amounts[::-1]
 
 def compute_htlc_expiry(hops: list[RouteHop], current_block_height: int, min_final_cltv_expiry_delta: int) -> list[int]:
     """Calculate HTLC expiry backward (from destination to source)"""
