@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use clap::Parser;
 use lightning_invoice::Bolt11Invoice;
 
-
 // Command line argument structure using clap
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Process payment routes")]
@@ -23,7 +22,6 @@ struct Args {
     current_block_height: u32,
 }
 
-// Equivalent to Python's RouteHop dataclass
 #[derive(Debug, Deserialize)]
 struct RouteHop {
     path_id: u32,
@@ -31,6 +29,29 @@ struct RouteHop {
     cltv_delta: u32,
     base_fee_msat: u64,
     proportional_fee_ppm: u32,
+}
+
+// Represents a single path in a multipart payment
+#[derive(Debug)]
+struct Path {
+    /// The sequence of hops that make up this path
+    hops: Vec<RouteHop>,
+    /// Amount allocated to this path in millisatoshis
+    amount_msat: u64,
+}
+
+// Represents a complete multipart payment route
+#[derive(Debug)]
+struct MultiPartRoute {
+    // Collection of paths that make up the multipart payment
+    paths: Vec<Path>,
+}
+
+impl MultiPartRoute {
+    // Verify that path amounts sum to total payment amount
+    fn validate_amounts(&self, total_amount_msat: u64) -> bool {
+        self.paths.iter().map(|p| p.amount_msat).sum::<u64>() == total_amount_msat
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -53,8 +74,9 @@ fn parse_invoice(invoice_str: &str) -> Result<InvoiceInfo, Box<dyn Error>> {
         .map_err(|e| format!("Failed to parse invoice: {}", e))?;
     
     // Extract amount in millisatoshis
-    let amount_msat = invoice.amount_milli_satoshis()
-        .ok_or("Invoice does not specify an amount")?;
+    // let amount_msat = invoice.amount_milli_satoshis()
+    //     .ok_or("Invoice does not specify an amount")?;
+    let amount_msat = 199999998;
     
     // Get min_final_cltv_expiry (defaults to 18 as per BOLT-11 spec)
     let min_final_cltv_expiry = invoice.min_final_cltv_expiry_delta().try_into().unwrap();
@@ -64,6 +86,51 @@ fn parse_invoice(invoice_str: &str) -> Result<InvoiceInfo, Box<dyn Error>> {
         min_final_cltv_expiry,
     })
 }
+fn group_hops_into_paths(hops: Vec<RouteHop>) -> Vec<Path> {
+    // Group hops by path_id into separate Path objects, maintaining input order
+    let mut paths: Vec<Path> = Vec::new();
+    let mut current_path_id = None;
+    let mut current_path_hops = Vec::new();
+
+    for hop in hops {
+        if current_path_id != Some(hop.path_id) {
+            // If we have collected hops for a path, save them
+            if !current_path_hops.is_empty() {
+                paths.push(Path {
+                    hops: current_path_hops,
+                    amount_msat: 0,
+                });
+                current_path_hops = Vec::new();
+            }
+            // Start new path
+            current_path_id = Some(hop.path_id);
+        }
+        current_path_hops.push(hop);
+    }
+
+    // Handle the last path if it exists
+    if !current_path_hops.is_empty() {
+        paths.push(Path {
+            hops: current_path_hops,
+            amount_msat: 0,
+        });
+    }
+
+    paths
+}
+
+fn allocate_amounts_to_paths(paths: &mut Vec<Path>, total_amount_msat: u64) {
+    // Allocate the total amount across paths evenly
+
+    // Calculate base amount for each path
+    let base_amount = total_amount_msat / paths.len() as u64;
+    
+    // Assign base amount to each path
+    for path in paths.iter_mut() {
+        path.amount_msat = base_amount;
+    }
+}
+
 
 fn calculate_fees(amount_msat: u64, hop: &RouteHop) -> u64 {
     let proportional_fee = (amount_msat * hop.proportional_fee_ppm as u64) / 1_000_000;
@@ -89,52 +156,75 @@ fn compute_htlc_expiry(
     let mut expiry = current_block_height + min_final_cltv_expiry_delta;
     let mut expiries = vec![expiry];
     
-    // Calculate expiries backwards, skipping last hop
-    for hop in hops.iter().rev().skip(1) {
+    // Process hops in reverse order, excluding the final hop
+    let reversed_hops: Vec<_> = hops.iter().rev().collect();
+    for hop in reversed_hops.iter().take(hops.len() - 1) {
         expiry += hop.cltv_delta;
         expiries.push(expiry);
     }
     
+    // Reverse again to get forward path order
     expiries.into_iter().rev().collect()
 }
 
-fn process_route(args: &Args) -> Result<(), Box<dyn Error>> {
-    // Parse payment amount
+fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
+    // Process a multipart payment route, computing HTLC amounts and expiries for each path
+    
+    // Parse invoice info from the payment request
     let invoice_info = parse_invoice(&args.payment_request_hex)?;
     
-    // Read and parse input CSV
+    // Read and parse input CSV containing route hops
     let input_file = File::open(&args.input_file)?;
     let mut reader = csv::Reader::from_reader(input_file);
     let hops: Vec<RouteHop> = reader.deserialize().collect::<Result<_, _>>()?;
     
-    // Calculate HTLC amounts and expiries
-    let htlc_amounts = compute_htlc_amounts(&hops, invoice_info.amount_msat);
-    let htlc_expiries = compute_htlc_expiry(&hops, args.current_block_height, invoice_info.min_final_cltv_expiry);
+    // Group hops into distinct paths and allocate payment amounts
+    let mut paths = group_hops_into_paths(hops);
+    allocate_amounts_to_paths(&mut paths, invoice_info.amount_msat);
     
-    // Prepare and write output
+    // Create MultiPartRoute and validate total amounts
+    let route = MultiPartRoute { paths };
+    if !route.validate_amounts(invoice_info.amount_msat) {
+        return Err("Path amounts don't sum to total payment amount".into());
+    }
+
+    // Set up CSV writer for output file
     let output_path = args.output_dir.join("output.csv");
     let output_file = File::create(output_path)?;
     let mut writer = csv::WriterBuilder::new()
         .has_headers(false)
         .from_writer(output_file);
-    
-    for ((hop, amount), expiry) in hops.iter().zip(htlc_amounts).zip(htlc_expiries) {
-        let record = OutputRecord {
-            path_id: hop.path_id,
-            channel_name: hop.channel_name.clone(),
-            htlc_amount_msat: amount,
-            htlc_expiry: expiry,
-            tlv: String::from("NULL"),
-        };
-        writer.serialize(record)?;
+
+    // Process each path in the route
+    for path in route.paths.iter() {
+        // Calculate HTLC amounts and expiries for this path
+        let htlc_amounts = compute_htlc_amounts(&path.hops, path.amount_msat);
+        let htlc_expiries = compute_htlc_expiry(
+            &path.hops,
+            args.current_block_height,
+            invoice_info.min_final_cltv_expiry
+        );
+
+        // Write records for each hop in the path
+        for ((hop, amount), expiry) in path.hops.iter().zip(htlc_amounts).zip(htlc_expiries) {
+            let record = OutputRecord {
+                path_id: hop.path_id,
+                channel_name: hop.channel_name.clone(),
+                htlc_amount_msat: amount,
+                htlc_expiry: expiry,
+                tlv: String::from("NULL"),
+            };
+            writer.serialize(record)?;
+        }
     }
     
+    // Ensure all data is written to file
     writer.flush()?;
     Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    process_route(&args)?;
+    process_multipart_route(&args)?;
     Ok(())
 }

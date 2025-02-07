@@ -1,4 +1,8 @@
+input.csv
+input2.csv
 output.csv
+python_output.csv
+rust_output.csv
 
 # Python-specific ignores
 __pycache__/

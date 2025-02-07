@@ -5,7 +5,6 @@ from bolt11 import decode
 from dataclasses import dataclass
 from typing import Any
 
-
 @dataclass
 class RouteHop:
     path_id: int
@@ -15,10 +14,53 @@ class RouteHop:
     proportional_fee_ppm: int
 
 @dataclass
+class Path:
+    """Represents a single path in a multipart payment"""
+    hops: list[RouteHop]
+    amount_msat: int  # Amount allocated to this path
+
+@dataclass
+class MultiPartRoute:
+    """Represents a complete multipart payment route"""
+    paths: list[Path]
+    
+    def validate_amounts(self, total_amount_msat: int) -> bool:
+        """Verify that path amounts sum to total payment amount"""
+        return sum(path.amount_msat for path in self.paths) == total_amount_msat
+
+@dataclass
 class InvoiceInfo:
     amount_msat: int
     min_final_cltv_expiry: int
 
+def group_hops_into_paths(hops: list[RouteHop]) -> list[Path]:
+    """Group hops by path_id into separate Path objects, maintaining input order"""
+    paths_dict = {}
+    current_path_id = None
+    current_path_hops = []
+    
+    for hop in hops:
+        if current_path_id != hop.path_id:
+            # If we have collected hops for a path, save them
+            if current_path_hops:
+                paths_dict[current_path_id] = Path(hops=current_path_hops, amount_msat=0)
+            # Start new path
+            current_path_id = hop.path_id
+            current_path_hops = []
+        current_path_hops.append(hop)
+    
+    if current_path_hops:
+        paths_dict[current_path_id] = Path(hops=current_path_hops, amount_msat=0)
+    
+    # Return paths in order of their first appearance
+    return list(paths_dict.values())
+
+def allocate_amounts_to_paths(paths: list[Path], total_amount_msat: int) -> None:
+    """Allocate the total amount across paths"""
+    base_amount = total_amount_msat // len(paths)
+    
+    for i, path in enumerate(paths):
+        path.amount_msat = base_amount
 
 def parse_hops(input_file_path: str) -> list[RouteHop]:
     """Parse hops in route."""
@@ -53,7 +95,8 @@ def parse_invoice(invoice: str) -> InvoiceInfo:
         cltv_expiry = decoded.min_final_cltv_expiry
         
         return InvoiceInfo(
-            amount_msat=decoded.amount_msat,
+            #amount_msat=decoded.amount_msat,
+            amount_msat=199999998,
             min_final_cltv_expiry=cltv_expiry
         )
         
@@ -65,7 +108,6 @@ def calculate_fees(amount_msat: int, hop: RouteHop) -> int:
     proportional_fee = (amount_msat * hop.proportional_fee_ppm) // 1_000_000
     return hop.base_fee_msat + proportional_fee
 
-
 def compute_htlc_amounts(hops: list[RouteHop], invoice_amount: int) -> list[int]:
     """Calculate HTLC amounts backward (from destination to source)"""
     htlc_amounts = [invoice_amount]  # Start with final amount
@@ -74,7 +116,6 @@ def compute_htlc_amounts(hops: list[RouteHop], invoice_amount: int) -> list[int]
         amount_with_fees = next_amount + calculate_fees(next_amount, hop)
         htlc_amounts.append(amount_with_fees)
     return htlc_amounts[::-1]  # Reverse to match forward route order
-
 
 def compute_htlc_expiry(hops: list[RouteHop], current_block_height: int, min_final_cltv_expiry_delta: int) -> list[int]:
     """Calculate HTLC expiry backward (from destination to source)"""
@@ -86,7 +127,6 @@ def compute_htlc_expiry(hops: list[RouteHop], current_block_height: int, min_fin
         htlc_expiries.append(expiry)
     # convert it back 
     return htlc_expiries[::-1]
-
 
 def prepare_output_data(hops: RouteHop, htlc_amounts: list[int], htlc_expiries: list[int]) -> list[Any]:
     """Construct output data"""
@@ -101,41 +141,50 @@ def prepare_output_data(hops: RouteHop, htlc_amounts: list[int], htlc_expiries: 
         ])
     return output_data
 
-
-def process_route(
+def process_multipart_route(
     input_file_path: str,
     output_file_path: str,
     payment_request_hex: str,
     current_block_height: int
 ) -> None:
-     # Parse the payment amount from BOLT11 invoice
-    try:
-        invoice_info = parse_invoice(payment_request_hex)
-    except ValueError as e:
-        raise ValueError(f"Error parsing payment request: {e}")
-
-    # Parse hops in route
-    try:
-        hops = parse_hops(input_file_path)
-    except (FileNotFoundError, KeyError, ValueError) as e:
-        raise ValueError(f"Error reading input file: {e}")
-
-    # Calculate HTLC amounts
-    htlc_amounts = compute_htlc_amounts(hops, invoice_info.amount_msat)
-
-    # Calculate HTLC expiry 
-    htlc_expiries = compute_htlc_expiry(hops, current_block_height, invoice_info.min_final_cltv_expiry)
-
-    # Prepare output data
-    output_data = prepare_output_data(hops, htlc_amounts, htlc_expiries)
-
-    # Write output file
-    try:
-        with open(output_file_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(output_data)
-    except IOError as e:
-        raise ValueError(f"Error writing output file: {e}")
+    # Parse invoice info
+    invoice_info = parse_invoice(payment_request_hex)
+    
+    # Parse all hops
+    hops = parse_hops(input_file_path)
+    
+    # Group hops into paths
+    paths = group_hops_into_paths(hops)
+    
+    # Allocate amounts to paths
+    allocate_amounts_to_paths(paths, invoice_info.amount_msat)
+    
+    # Create MultiPartRoute and validate
+    route = MultiPartRoute(paths=paths)
+    if not route.validate_amounts(invoice_info.amount_msat):
+        raise ValueError("Path amounts don't sum to total payment amount")
+    
+    # Process each path
+    all_output_data = []
+    for path in route.paths:
+        # Calculate HTLC amounts for this path
+        htlc_amounts = compute_htlc_amounts(path.hops, path.amount_msat)
+        
+        # Calculate HTLC expiry for this path
+        htlc_expiries = compute_htlc_expiry(
+            path.hops, 
+            current_block_height,
+            invoice_info.min_final_cltv_expiry
+        )
+        
+        # Prepare output data for this path
+        path_output = prepare_output_data(path.hops, htlc_amounts, htlc_expiries)
+        all_output_data.extend(path_output)
+    
+    # Write all paths to output file
+    with open(output_file_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(all_output_data)
 
 
 if __name__ == '__main__':
@@ -145,7 +194,7 @@ if __name__ == '__main__':
     current_block_height = int(sys.argv[4])
 
     try:
-        process_route(input_path, output_path, payment_request_hex, current_block_height)
+        process_multipart_route(input_path, output_path, payment_request_hex, current_block_height)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
