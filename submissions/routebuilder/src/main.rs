@@ -194,13 +194,14 @@ fn prepare_output_data(
     htlc_amounts: &[u64],
     htlc_expiries: &[u32],
     invoice_info: &InvoiceInfo,
+    is_mpp: bool,
 ) -> Vec<OutputRecord> {
     path.hops.iter().enumerate()
         .zip(htlc_amounts.iter())
         .zip(htlc_expiries.iter())
         .map(|(((i, hop), &amount), &expiry)| {
             let is_last_hop = i == path.hops.len() - 1;
-            let payment_secret = if is_last_hop {
+            let payment_secret = if is_last_hop && is_mpp {
                 format_payment_secret(&invoice_info.payment_secret, invoice_info.amount_msat)
             } else {
                 String::from("NULL")
@@ -233,6 +234,9 @@ fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
         return Err("Path amounts don't sum to total payment amount".into());
     }
 
+    // Determine if this is a multi-path payment
+    let is_mpp = route.paths.len() > 1;
+
     let output_path = args.output_dir.join("output.csv");
     let output_file = File::create(output_path)?;
     let mut writer = csv::WriterBuilder::new()
@@ -252,6 +256,7 @@ fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
             &htlc_amounts,
             &htlc_expiries,
             &invoice_info,
+            is_mpp
         );
 
         for record in records {
