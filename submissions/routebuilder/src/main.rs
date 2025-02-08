@@ -194,14 +194,13 @@ fn prepare_output_data(
     htlc_amounts: &[u64],
     htlc_expiries: &[u32],
     invoice_info: &InvoiceInfo,
-    is_last_path: bool,
 ) -> Vec<OutputRecord> {
     path.hops.iter().enumerate()
         .zip(htlc_amounts.iter())
         .zip(htlc_expiries.iter())
         .map(|(((i, hop), &amount), &expiry)| {
             let is_last_hop = i == path.hops.len() - 1;
-            let payment_secret = if is_last_hop && is_last_path {
+            let payment_secret = if is_last_hop {
                 format_payment_secret(&invoice_info.payment_secret, invoice_info.amount_msat)
             } else {
                 String::from("NULL")
@@ -218,93 +217,29 @@ fn prepare_output_data(
         .collect()
 }
 
-// fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
-//     let invoice_info = parse_invoice(&args.payment_request_hex)?;
-    
-//     let file_content = std::fs::read_to_string(&args.input_file)?;
-//     let mut reader = csv::ReaderBuilder::new()
-//         .from_reader(file_content.as_bytes());
-//     let hops: Vec<RouteHop> = reader.deserialize().collect::<Result<_, _>>()?;
-    
-//     let mut paths = group_hops_into_paths(hops);
-//     allocate_amounts_to_paths(&mut paths, invoice_info.amount_msat);
-    
-//     let route = MultiPartRoute { paths };
-//     if !route.validate_amounts(invoice_info.amount_msat) {
-//         return Err("Path amounts don't sum to total payment amount".into());
-//     }
-
-//     let output_path = args.output_dir.join("output.csv");
-//     let output_file = File::create(output_path)?;
-//     let mut writer = csv::WriterBuilder::new()
-//         .has_headers(false)
-//         .from_writer(output_file);
-
-//     let path_count = route.paths.len();
-//     for (i, path) in route.paths.iter().enumerate() {
-//         let htlc_amounts = compute_htlc_amounts(&path.hops, path.amount_msat);
-//         let htlc_expiries = compute_htlc_expiry(
-//             &path.hops,
-//             args.current_block_height,
-//             invoice_info.min_final_cltv_expiry.try_into().unwrap()
-//         );
-
-//         let is_last_path = i == path_count - 1;
-//         let records = prepare_output_data(
-//             path,
-//             &htlc_amounts,
-//             &htlc_expiries,
-//             &invoice_info,
-//             is_last_path
-//         );
-
-//         for record in records {
-//             writer.serialize(record)?;
-//         }
-//     }
-    
-//     writer.flush()?;
-//     Ok(())
-// }
-
 fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
-    // Process a multipart payment route, computing HTLC amounts and expiries for each path
-    
-    // Parse invoice info from the payment request
     let invoice_info = parse_invoice(&args.payment_request_hex)?;
     
-     // Read the input file content
-     let file_content = std::fs::read_to_string(&args.input_file)?;
+    let file_content = std::fs::read_to_string(&args.input_file)?;
+    let mut reader = csv::ReaderBuilder::new()
+        .from_reader(file_content.as_bytes());
+    let hops: Vec<RouteHop> = reader.deserialize().collect::<Result<_, _>>()?;
     
-     // Print the file content to console
-     println!("Input file contents:");
-     println!("{}", file_content);
-     
-     // Create CSV reader from the content string
-     let mut reader = csv::ReaderBuilder::new()
-         .from_reader(file_content.as_bytes());
-     let hops: Vec<RouteHop> = reader.deserialize().collect::<Result<_, _>>()?;
-    
-    // Group hops into distinct paths and allocate payment amounts
     let mut paths = group_hops_into_paths(hops);
     allocate_amounts_to_paths(&mut paths, invoice_info.amount_msat);
     
-    // Create MultiPartRoute and validate total amounts
     let route = MultiPartRoute { paths };
     if !route.validate_amounts(invoice_info.amount_msat) {
         return Err("Path amounts don't sum to total payment amount".into());
     }
 
-    // Set up CSV writer for output file
     let output_path = args.output_dir.join("output.csv");
     let output_file = File::create(output_path)?;
     let mut writer = csv::WriterBuilder::new()
         .has_headers(false)
         .from_writer(output_file);
 
-    // Process each path in the route
     for path in route.paths.iter() {
-        // Calculate HTLC amounts and expiries for this path
         let htlc_amounts = compute_htlc_amounts(&path.hops, path.amount_msat);
         let htlc_expiries = compute_htlc_expiry(
             &path.hops,
@@ -312,23 +247,84 @@ fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
             invoice_info.min_final_cltv_expiry
         );
 
-        // Write records for each hop in the path
-        for ((hop, amount), expiry) in path.hops.iter().zip(htlc_amounts).zip(htlc_expiries) {
-            let record = OutputRecord {
-                path_id: hop.path_id,
-                channel_name: hop.channel_name.clone(),
-                htlc_amount_msat: amount,
-                htlc_expiry: expiry,
-                payment_secret: String::from("NULL"),
-            };
+        let records = prepare_output_data(
+            path,
+            &htlc_amounts,
+            &htlc_expiries,
+            &invoice_info,
+        );
+
+        for record in records {
             writer.serialize(record)?;
         }
     }
     
-    // Ensure all data is written to file
     writer.flush()?;
     Ok(())
 }
+
+// fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
+//     // Process a multipart payment route, computing HTLC amounts and expiries for each path
+    
+//     // Parse invoice info from the payment request
+//     let invoice_info = parse_invoice(&args.payment_request_hex)?;
+    
+//      // Read the input file content
+//      let file_content = std::fs::read_to_string(&args.input_file)?;
+    
+//      // Print the file content to console
+//      println!("Input file contents:");
+//      println!("{}", file_content);
+     
+//      // Create CSV reader from the content string
+//      let mut reader = csv::ReaderBuilder::new()
+//          .from_reader(file_content.as_bytes());
+//      let hops: Vec<RouteHop> = reader.deserialize().collect::<Result<_, _>>()?;
+    
+//     // Group hops into distinct paths and allocate payment amounts
+//     let mut paths = group_hops_into_paths(hops);
+//     allocate_amounts_to_paths(&mut paths, invoice_info.amount_msat);
+    
+//     // Create MultiPartRoute and validate total amounts
+//     let route = MultiPartRoute { paths };
+//     if !route.validate_amounts(invoice_info.amount_msat) {
+//         return Err("Path amounts don't sum to total payment amount".into());
+//     }
+
+//     // Set up CSV writer for output file
+//     let output_path = args.output_dir.join("output.csv");
+//     let output_file = File::create(output_path)?;
+//     let mut writer = csv::WriterBuilder::new()
+//         .has_headers(false)
+//         .from_writer(output_file);
+
+//     // Process each path in the route
+//     for path in route.paths.iter() {
+//         // Calculate HTLC amounts and expiries for this path
+//         let htlc_amounts = compute_htlc_amounts(&path.hops, path.amount_msat);
+//         let htlc_expiries = compute_htlc_expiry(
+//             &path.hops,
+//             args.current_block_height,
+//             invoice_info.min_final_cltv_expiry
+//         );
+
+//         // Write records for each hop in the path
+//         for ((hop, amount), expiry) in path.hops.iter().zip(htlc_amounts).zip(htlc_expiries) {
+//             let record = OutputRecord {
+//                 path_id: hop.path_id,
+//                 channel_name: hop.channel_name.clone(),
+//                 htlc_amount_msat: amount,
+//                 htlc_expiry: expiry,
+//                 payment_secret: String::from("NULL"),
+//             };
+//             writer.serialize(record)?;
+//         }
+//     }
+    
+//     // Ensure all data is written to file
+//     writer.flush()?;
+//     Ok(())
+// }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
