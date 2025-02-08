@@ -60,31 +60,49 @@ struct OutputRecord {
     channel_name: String,
     htlc_amount_msat: u64,
     htlc_expiry: u32,
-    tlv: String,
+    payment_secret: String,
 }
 
 struct InvoiceInfo {
     amount_msat: u64,
     min_final_cltv_expiry: u32,
+    payment_secret: String,
+}
+
+fn format_payment_secret(payment_secret: &str, total_msat: u64) -> String {
+    // Convert type (8) to 8 bytes hex
+    let type_hex = format!("{:016x}", 8);
+    // Convert length (40) to 8 bytes hex
+    let length_hex = format!("{:016x}", 40);
+    // Payment secret is already 32 bytes (64 hex chars)
+    // Convert total_msat to 8 bytes hex
+    let total_msat_hex = format!("{:016x}", total_msat);
+    
+    format!("{}{}{}{}", type_hex, length_hex, payment_secret, total_msat_hex)
 }
 
 fn parse_invoice(invoice_str: &str) -> Result<InvoiceInfo, Box<dyn Error>> {
-    // Parse the invoice string into a Bolt11Invoice
     let invoice: Bolt11Invoice = invoice_str.parse()
         .map_err(|e| format!("Failed to parse invoice: {}", e))?;
     
-    // Extract amount in millisatoshis
     let amount_msat = invoice.amount_milli_satoshis()
         .ok_or("Invoice does not specify an amount")?;
     
-    // Get min_final_cltv_expiry (defaults to 18 as per BOLT-11 spec)
-    let min_final_cltv_expiry = invoice.min_final_cltv_expiry_delta().try_into().unwrap();
+    let min_final_cltv_expiry = invoice.min_final_cltv_expiry_delta();
     
+    // Extract payment secret from invoice
+    let payment_secret = invoice.payment_secret()
+        .0.iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+
     Ok(InvoiceInfo {
         amount_msat,
-        min_final_cltv_expiry,
+        min_final_cltv_expiry: min_final_cltv_expiry.try_into().unwrap(),
+        payment_secret,
     })
 }
+
 fn group_hops_into_paths(hops: Vec<RouteHop>) -> Vec<Path> {
     // Group hops by path_id into separate Path objects, maintaining input order
     let mut paths: Vec<Path> = Vec::new();
@@ -171,6 +189,84 @@ fn compute_htlc_expiry(
     expiries.into_iter().rev().collect()
 }
 
+fn prepare_output_data(
+    path: &Path,
+    htlc_amounts: &[u64],
+    htlc_expiries: &[u32],
+    invoice_info: &InvoiceInfo,
+    is_last_path: bool,
+) -> Vec<OutputRecord> {
+    path.hops.iter().enumerate()
+        .zip(htlc_amounts.iter())
+        .zip(htlc_expiries.iter())
+        .map(|(((i, hop), &amount), &expiry)| {
+            let is_last_hop = i == path.hops.len() - 1;
+            let payment_secret = if is_last_hop && is_last_path {
+                format_payment_secret(&invoice_info.payment_secret, invoice_info.amount_msat)
+            } else {
+                String::from("NULL")
+            };
+            
+            OutputRecord {
+                path_id: hop.path_id,
+                channel_name: hop.channel_name.clone(),
+                htlc_amount_msat: amount,
+                htlc_expiry: expiry,
+                payment_secret,
+            }
+        })
+        .collect()
+}
+
+// fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
+//     let invoice_info = parse_invoice(&args.payment_request_hex)?;
+    
+//     let file_content = std::fs::read_to_string(&args.input_file)?;
+//     let mut reader = csv::ReaderBuilder::new()
+//         .from_reader(file_content.as_bytes());
+//     let hops: Vec<RouteHop> = reader.deserialize().collect::<Result<_, _>>()?;
+    
+//     let mut paths = group_hops_into_paths(hops);
+//     allocate_amounts_to_paths(&mut paths, invoice_info.amount_msat);
+    
+//     let route = MultiPartRoute { paths };
+//     if !route.validate_amounts(invoice_info.amount_msat) {
+//         return Err("Path amounts don't sum to total payment amount".into());
+//     }
+
+//     let output_path = args.output_dir.join("output.csv");
+//     let output_file = File::create(output_path)?;
+//     let mut writer = csv::WriterBuilder::new()
+//         .has_headers(false)
+//         .from_writer(output_file);
+
+//     let path_count = route.paths.len();
+//     for (i, path) in route.paths.iter().enumerate() {
+//         let htlc_amounts = compute_htlc_amounts(&path.hops, path.amount_msat);
+//         let htlc_expiries = compute_htlc_expiry(
+//             &path.hops,
+//             args.current_block_height,
+//             invoice_info.min_final_cltv_expiry.try_into().unwrap()
+//         );
+
+//         let is_last_path = i == path_count - 1;
+//         let records = prepare_output_data(
+//             path,
+//             &htlc_amounts,
+//             &htlc_expiries,
+//             &invoice_info,
+//             is_last_path
+//         );
+
+//         for record in records {
+//             writer.serialize(record)?;
+//         }
+//     }
+    
+//     writer.flush()?;
+//     Ok(())
+// }
+
 fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
     // Process a multipart payment route, computing HTLC amounts and expiries for each path
     
@@ -223,7 +319,7 @@ fn process_multipart_route(args: &Args) -> Result<(), Box<dyn Error>> {
                 channel_name: hop.channel_name.clone(),
                 htlc_amount_msat: amount,
                 htlc_expiry: expiry,
-                tlv: String::from("NULL"),
+                payment_secret: String::from("NULL"),
             };
             writer.serialize(record)?;
         }
