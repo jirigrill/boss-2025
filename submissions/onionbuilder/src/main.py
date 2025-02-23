@@ -19,7 +19,6 @@ class HopKeys:
 @dataclass
 class Hop:
     id: int
-    name: str
     pubkey: bytes
     payload: bytes
     hmac: Optional[bytes] = None
@@ -44,7 +43,6 @@ class OnionPayload:
             hops=[
                 Hop(
                     id=i,
-                    name=hop_data['name'],
                     pubkey=unhexlify(hop_data['pubkey']),
                     payload=unhexlify(hop_data['payload'])
                 )
