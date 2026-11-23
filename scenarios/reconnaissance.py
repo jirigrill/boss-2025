@@ -47,7 +47,7 @@ class Reconnaissance(Commander):
             self.log.info(f"{peer['addr']} {peer['subver']}")
 
         # We pick a node on the network to attack
-        victim = "tank-0000-red.default.svc"
+        victim = "tank-0005-rust"
 
         # regtest or signet
         chain = self.nodes[0].chain
@@ -63,7 +63,7 @@ class Reconnaissance(Commander):
 
         # Now we will use a python-based Bitcoin p2p node to send very specific,
         # unusual or non-standard messages to a "victim" node.
-        self.log.info(f"Attacking tank-0000-red.default.svc")
+        self.log.info(f"Attacking {victim}")
         attacker = P2PInterface()
         attacker.peer_connect(
             dstaddr=dstaddr,

