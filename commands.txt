@@ -1,0 +1,40 @@
+lncli --network signet newaddress p2wkh
+{
+    "address": "tb1q0le4lknxrhwm8y9vl6gv9la74yhv7d3tv5cynj"
+}
+
+bitcoin-cli -signet -named -rpcwallet=wallet_109 sendtoaddress address="tb1q0le4lknxrhwm8y9vl6gv9la74yhv7d3tv5cynj" amount=0.01 fee_rate=1
+f7a35584d45d395bf3cc16b42aa47dca81636508e24cca15e7112880f833ca51
+
+
+lncli openchannel --node_key 03ebc7280ff486f94cee51cff45a0fc521e9fe2560c02563ab191552fa90d4017d --connect boss2025.xyz:9737 --local_amt 50000 --sat_per_vbyte 1 --min_confs 0
+{
+    "funding_txid": "48310e2979032b5d2ebcd1e8fe307446e19e7a8ba51e244bc139b04f8c096edd"
+}
+
+lncli payinvoice lntbs44770n1pneuwmzpp5m5txffadl2al67extzfcrf8ur3wj805a4fhhdqu74lhgcs7k28nsdqswaskcmr9w30nqvpecqzzsxq9yn4qqsp56ssmlykree4fjhfn6adtuuywzewvcjcs8lzrjrgfq4ntdl27x9ms9p4gqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqysgqgt60m9ce0p46kycyvhg55eej2e5j2fyp6ex5m8ntt0z0472vl8w3ep8rp35f0c46qw88xtpgme5dkggrrcakv23v2r8rd7ra26356lgps2r8wz
+Payment hash: dd1664a7adfabbfd7b26589381a4fc1c5d23be9daa6f76839eafee8c43d651e7
+Description: wallet_009
+Amount (in satoshis): 4477
+Fee limit (in satoshis): 223
+Destination: 03ebc7280ff486f94cee51cff45a0fc521e9fe2560c02563ab191552fa90d4017d
+Confirm payment (yes/no): yes
++------------+--------------+--------------+--------------+-----+----------+------------------+----------------------+
+| HTLC_STATE | ATTEMPT_TIME | RESOLVE_TIME | RECEIVER_AMT | FEE | TIMELOCK | CHAN_OUT         | ROUTE                |
++------------+--------------+--------------+--------------+-----+----------+------------------+----------------------+
+| SUCCEEDED  |        0.037 |        0.443 | 4477         | 0   |     5805 | 6289206511009792 | 03ebc7280ff486f94cee |
++------------+--------------+--------------+--------------+-----+----------+------------------+----------------------+
+Amount + fee:   4477 + 0 sat
+Payment hash:   dd1664a7adfabbfd7b26589381a4fc1c5d23be9daa6f76839eafee8c43d651e7
+Payment status: SUCCEEDED, preimage: 3cec9d90533c1739f200677669f96f21382ece7afe45a715f4784ad7fa7733c5
+
+
+
+lncli openchannel --node_key 02ef09cab9ba578cfa5158d6951148a276cbb005bba5d61b8f630b75769d8df3f5 --connect boss2025.xyz:9738 --local_amt 50000 --sat_per_vbyte 1 --min_confs 0
+{
+    "funding_txid": "8d2da999e6566368a94cd302611796756aba5596ba7f8dacaa7f490250d8dbde"
+}
+
+
+
+lncli payinvoice --outgoing_chan_id=6360674766749696 lntbs81900n1pneuwlfpp5e5sk7htk7e3q62v3x4rlmgd9sw5vxgwtqzfwvppyu3ar7n8g5rxsdqswaskcmr9w30nqvpecqzzsxq9yn4qqsp577a8c9r3cduwyf57dcnzj8n0rlfmafxlcwmmy9fwnr6u3julyqaq9p4gqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqysgqyxd5a7xzpcuh6ufrz688k5c09anav200q9zckean69hnpx3fxx99sf8wc9dtnakeuzan523rxyteluwyawur300l56asfvrwlk85xqspymqzyg
