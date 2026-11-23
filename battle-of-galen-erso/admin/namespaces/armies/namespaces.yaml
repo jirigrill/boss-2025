@@ -1,0 +1,14 @@
+namespaces:
+- name: wargames-rust
+- name: wargames-blue
+- name: wargames-yellow
+- name: wargames-coffee
+- name: wargames-purple
+- name: wargames-orange
+- name: wargames-navy
+- name: wargames-olive
+- name: wargames-emerald
+- name: wargames-mint
+- name: wargames-sapphire
+- name: wargames-silver
+- name: wargames-aqua
