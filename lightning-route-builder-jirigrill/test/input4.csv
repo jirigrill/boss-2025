@@ -1,0 +1,7 @@
+path_id,channel_name,cltv_delta,base_fee_msat,proportional_fee_ppm
+0,AliceBob,125,1000,10
+0,BobCarol,45,0,100000
+0,CarolDave,100,5000,0
+1,AliceEve,150,1000,10
+1,EveFred,100,1000,10000
+1,FredDave,10,5500,3000
